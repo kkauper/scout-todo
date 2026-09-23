@@ -1,5 +1,6 @@
 allowBuilds:
   esbuild: true
   vue-demi: true
+  workerd: true
 minimumReleaseAgeExclude:
   - dotenv@18.0.3
