@@ -3,8 +3,5 @@ export default defineEventHandler(async (event) => {
   if (!path.startsWith('/api/')) return
   if (path === '/api/auth/login' || path.startsWith('/api/_auth/')) return
   const session = await requireUserSession(event)
-  if (!session.user?.id) {
-    await clearUserSession(event)
-    throw createError({ statusCode: 401, statusMessage: 'Session expired' })
-  }
+  await assertSessionCurrent(event, session)
 })

@@ -25,6 +25,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Invalid username or password' })
   }
 
-  await setUserSession(event, { user: { id: user.id, name: user.username }, loggedInAt: Date.now() })
+  await setUserSession(event, {
+    user: { id: user.id, name: user.username },
+    secure: { sv: user.sessionVersion },
+    loggedInAt: Date.now(),
+  })
   return { ok: true }
 })

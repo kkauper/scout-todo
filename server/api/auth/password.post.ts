@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 const bodySchema = z.object({
@@ -30,7 +30,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const passwordHash = await createPasswordHash(body.newPassword)
-  await db.update(schema.users).set({ passwordHash }).where(eq(schema.users.id, userId))
+  const [updated] = await db
+    .update(schema.users)
+    .set({ passwordHash, sessionVersion: sql`${schema.users.sessionVersion} + 1` })
+    .where(eq(schema.users.id, userId))
+    .returning({ sv: schema.users.sessionVersion })
+
+  // Signs out every other device; this one gets a fresh session on the new version.
+  await replaceUserSession(event, {
+    user: { id: user.id, name: user.username },
+    secure: { sv: updated!.sv },
+    loggedInAt: Date.now(),
+  })
 
   return { ok: true }
 })

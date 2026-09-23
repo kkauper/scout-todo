@@ -24,13 +24,25 @@ Optional seed:
 DATABASE_URL='<supabase url>' pnpm run db:seed
 ```
 
+### App role (least privilege)
+
+Run `scripts/sql/app-role.sql` once in the Supabase SQL editor (as `postgres`) after replacing `REPLACE_ME` with a generated password (`openssl rand -base64 32`). This creates a `scout_app` role with only `SELECT`/`INSERT`/`UPDATE`/`DELETE` on the app tables and the RLS policies it needs to see rows (Supabase enables RLS on every table by default with no policies, so without this the Data API roles — and `scout_app` itself — would see nothing). Hyperdrive must connect as `scout_app`. Migrations, the seed script, and `user:add`/`user:passwd` keep using the owner (`postgres`) connection string.
+
+Any migration that adds a new table must also add a `scout_app_all` policy for it (or re-run `scripts/sql/app-role.sql` after adding the table to its list) — otherwise the app sees no rows in that table.
+
 ## 3. Hyperdrive
 
 ```bash
-pnpm exec wrangler hyperdrive create scout-db --connection-string='<supabase url>' --caching-disabled
+pnpm exec wrangler hyperdrive create scout-db --connection-string='<scout_app url>' --caching-disabled
 ```
 
-Caching is disabled because writes don't invalidate cached reads. Paste the printed id into `wrangler.jsonc`.
+Caching is disabled because writes don't invalidate cached reads. Paste the printed id into `wrangler.jsonc`. Via the session pooler, the `scout_app` username is `scout_app.<project-ref>`.
+
+Updating an existing deployment to point at `scout_app`:
+
+```bash
+pnpm exec wrangler hyperdrive update <hyperdrive-id> --connection-string='<scout_app url>'
+```
 
 ## 4. Secrets
 
@@ -77,6 +89,7 @@ Put `NUXT_SESSION_PASSWORD` in `.dev.vars` for local preview.
 
 - Ollama is unreachable in the cloud deployment (`OLLAMA_URL` is empty), but AI works once a user saves their own Claude API key in Account → AI settings.
 - Rotating `NUXT_SESSION_PASSWORD` signs everyone out.
+- Migration `0005` adds `users.session_version`; run it before deploying. Existing sessions are signed out once after this deploy.
 
 ### Upgrading from a single-account deployment
 

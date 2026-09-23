@@ -231,3 +231,57 @@ describe('multi-user isolation', () => {
     expect(json).toEqual(aliceBoardSnapshot)
   })
 })
+
+describe('session revocation', () => {
+  const carolUsername = `iso-c-${suffix}`
+  const CAROL_PASSWORD = 'isolation-pass-3'
+  const CAROL_NEW_PASSWORD = 'isolation-pass-4'
+  let carolId: string
+
+  beforeAll(async () => {
+    const carol = await createUser(db, carolUsername, CAROL_PASSWORD)
+    carolId = carol.id
+  })
+
+  afterAll(async () => {
+    await client`DELETE FROM users WHERE id = ${carolId}`
+  })
+
+  it('changing password revokes other sessions but keeps the changing device signed in', async () => {
+    const cookieA = await login(carolUsername, CAROL_PASSWORD)
+    const cookieB = await login(carolUsername, CAROL_PASSWORD)
+
+    expect((await api(cookieA, 'GET', '/api/board')).status).toBe(200)
+    expect((await api(cookieB, 'GET', '/api/board')).status).toBe(200)
+
+    const passwordRes = await fetch(`${BASE}/api/auth/password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', cookie: cookieA },
+      body: JSON.stringify({ currentPassword: CAROL_PASSWORD, newPassword: CAROL_NEW_PASSWORD }),
+    })
+    expect(passwordRes.status).toBe(200)
+    const setCookie = passwordRes.headers.getSetCookie()
+    const first = setCookie[0]
+    if (!first) throw new Error('no set-cookie header on password-change response')
+    const cookieA2 = first.split(';')[0]!
+
+    expect((await api(cookieB, 'GET', '/api/board')).status).toBe(401)
+    expect((await api(cookieB, 'GET', '/api/_auth/session')).status).toBe(401)
+
+    expect((await api(cookieA2, 'GET', '/api/board')).status).toBe(200)
+
+    const loginNew = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: carolUsername, password: CAROL_NEW_PASSWORD }),
+    })
+    expect(loginNew.status).toBe(200)
+
+    const loginOld = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: carolUsername, password: CAROL_PASSWORD }),
+    })
+    expect(loginOld.status).toBe(401)
+  })
+})

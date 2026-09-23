@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { DEFAULT_COLUMNS } from '../../shared/types/domain'
 import { isUniqueViolation } from '../utils/db'
@@ -53,7 +53,7 @@ export async function setUserPassword(db: Db, username: string, password: string
   const passwordHash = await createPasswordHash(password)
   const [row] = await db
     .update(schema.users)
-    .set({ passwordHash })
+    .set({ passwordHash, sessionVersion: sql`${schema.users.sessionVersion} + 1` })
     .where(eq(schema.users.username, name))
     .returning()
   if (!row) throw new Error(`User "${name}" not found`)

@@ -3,6 +3,10 @@ declare module '#auth-utils' {
     id: string
     name: string
   }
+
+  interface SecureSessionData {
+    sv: number
+  }
 }
 
 export {}

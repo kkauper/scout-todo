@@ -3,6 +3,7 @@ import {
   date,
   doublePrecision,
   index,
+  integer,
   pgEnum,
   pgTable,
   primaryKey,
@@ -21,6 +22,7 @@ export const users = pgTable('users', {
   username: text('username').notNull().unique(),
   passwordHash: text('password_hash'),
   anthropicApiKey: text('anthropic_api_key'),
+  sessionVersion: integer('session_version').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 })
 
