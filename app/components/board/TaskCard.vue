@@ -152,26 +152,16 @@ function onDelete() {
         :model-value="task.projectId"
         @update:model-value="(v) => store.updateTask(task.id, { projectId: v })"
       >
-        <template #default="{ project: pickedProject }">
+        <template #default="{ project: pickedProject, open: pickerOpen }">
           <button
-            v-if="pickedProject"
             type="button"
-            :aria-label="`Project: ${pickedProject.name}. Change project`"
-            class="order-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring outline-none"
+            :aria-label="pickedProject ? `Project: ${pickedProject.name}. Change project` : 'Assign project'"
+            :class="pickedProject ? 'order-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-3 h-5.5 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
             @dblclick.stop
             @keydown.stop
           >
-            <ProjectBadge :label="pickedProject.name" :color="pickedProject.color" />
-          </button>
-          <button
-            v-else
-            type="button"
-            aria-label="Assign project"
-            class="order-3 hidden h-5.5 rounded-full border border-dashed px-2 text-xs text-muted-foreground group-hover/card:inline-flex group-focus-within/card:inline-flex"
-            @dblclick.stop
-            @keydown.stop
-          >
-            + Project
+            <ProjectBadge v-if="pickedProject" :label="pickedProject.name" :color="pickedProject.color" />
+            <template v-else>+ Project</template>
           </button>
         </template>
       </ProjectPicker>
@@ -179,27 +169,19 @@ function onDelete() {
         :model-value="task.tagIds"
         @update:model-value="(v) => store.updateTask(task.id, { tagIds: v })"
       >
-        <template #default="{ tags: pickedTags }">
+        <template #default="{ tags: pickedTags, open: pickerOpen }">
           <button
-            v-if="pickedTags.length"
             type="button"
             aria-label="Edit tags"
-            class="order-2 flex items-center gap-1 rounded-full focus-visible:ring-2 focus-visible:ring-ring outline-none"
+            :class="pickedTags.length ? 'order-2 flex items-center gap-1 rounded-full focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-4 h-5.5 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
             @dblclick.stop
             @keydown.stop
           >
-            <ColorBadge v-for="tag in pickedTags" :key="tag.id" :label="tag.name" :color="tag.color" />
-            <span class="text-xs text-muted-foreground">+</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            aria-label="Edit tags"
-            class="order-4 hidden h-5.5 rounded-full border border-dashed px-2 text-xs text-muted-foreground group-hover/card:inline-flex group-focus-within/card:inline-flex"
-            @dblclick.stop
-            @keydown.stop
-          >
-            + Tag
+            <template v-if="pickedTags.length">
+              <ColorBadge v-for="tag in pickedTags" :key="tag.id" :label="tag.name" :color="tag.color" />
+              <span class="text-xs text-muted-foreground">+</span>
+            </template>
+            <template v-else>+ Tag</template>
           </button>
         </template>
       </TagPicker>

@@ -35,7 +35,7 @@ async function onCreate(name: string) {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <slot :project="selectedProject">
+      <slot :project="selectedProject" :open="open">
         <Button variant="outline" size="sm" aria-label="Project">
           <ProjectBadge
             :label="selectedProject ? selectedProject.name : 'No project'"

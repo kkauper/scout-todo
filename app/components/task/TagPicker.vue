@@ -35,7 +35,7 @@ async function onCreate(name: string) {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <slot :tags="selectedTags">
+      <slot :tags="selectedTags" :open="open">
         <Button variant="outline" size="sm" aria-label="Tags" class="h-auto min-h-7 flex-wrap justify-start">
           <template v-if="selectedTags.length > 0">
             <ColorBadge v-for="tag in selectedTags" :key="tag.id" :label="tag.name" :color="tag.color" />
