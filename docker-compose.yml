@@ -1,0 +1,23 @@
+name: scout
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: scout-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scout
+      POSTGRES_PASSWORD: scout
+      POSTGRES_DB: scout
+    ports:
+      - "5433:5432"
+    volumes:
+      - scout-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scout -d scout"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  scout-pgdata:
