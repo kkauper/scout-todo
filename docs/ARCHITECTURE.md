@@ -264,12 +264,16 @@ Username/password login via `nuxt-auth-utils` sealed httpOnly cookie sessions (n
 
 Accounts live in a `users` table (`id`, `username` unique, `password_hash` nullable, `created_at`); there is no public registration, accounts are created with `pnpm user:add <name>` and reset with `pnpm user:passwd <name>` (both prompt for a password, `server/db/users.ts`). Every `projects`, `tags`, `board_columns`, and `tasks` row carries a `user_id` (cascade on delete); child tables (`task_tags`, `checklist_items`, `task_state_events`) derive ownership through their parent task. Isolation is enforced in application code, not via Postgres RLS: every handler calls `requireUserId(event)` (`server/utils/owner.ts`) first and scopes its queries with `eq(table.userId, userId)`. An `[id]` route param belonging to another user always 404s; an id referenced in a request body/query (`projectId`, `columnId`, `tagIds`, `moveTo`) belonging to another user 400s — checked up front via `assertOwnedRefs(db, userId, refs, message)`. Session shape is `{ user: { id, name }, loggedInAt }`; a session without `user.id` is cleared and rejected with 401.
 
-## Local AI (Ollama)
+## AI (Claude or local Ollama)
 
-- Optional. Config `OLLAMA_URL` (default `http://127.0.0.1:11434`), `OLLAMA_MODEL` (default `qwen3:8b`).
-- `server/utils/ollama.ts` (status + non-streaming chat, `think: false`, 90 s timeout, 503 when offline), `server/utils/ai-prompts.ts` (pure prompt builders; forbid invented facts/metrics; answer in input language).
+- Provider switch per request (`server/utils/ai.ts`, `aiChat`/`aiStatus`): if the signed-in user has a Claude API key configured, requests go to Claude; otherwise they fall back to local Ollama (unchanged behavior, incl. empty `OLLAMA_URL` = disabled). `getUserAnthropicKey(event)` reads and decrypts the user's key, returning `null` when unset, undecryptable, or `NUXT_ENCRYPTION_KEY` is empty.
+- Claude call: `@anthropic-ai/sdk`, `client.beta.messages.create` with `model: 'claude-opus-5'`, `output_config.effort: 'low'`, server-side refusal fallback (`betas: ['server-side-fallback-2026-07-01']`, `fallbacks: 'default'`), and `output_config.format = { type: 'json_schema', schema }` for the JSON routes (`additionalProperties: false` on every object). `stop_reason === 'refusal'` → 422; SDK error classes map to 400/403/429/502/503, never exposing the key.
+- Key at rest: AES-256-GCM (WebCrypto only), key material derived via SHA-256 from `NUXT_ENCRYPTION_KEY` (min 32 chars). Stored as `v1:<ivB64url>:<ciphertextB64url>` in `users.anthropic_api_key` (`server/utils/secret-box.ts`: `encryptSecret`, `decryptSecret` — never throws, returns `null` on any tamper/format issue —, `secretHint`).
+- Settings endpoints `server/api/settings/ai.{get,put,delete}`: GET returns `{ claudeKeyConfigured, claudeKeyHint, encryptionConfigured }`; PUT validates the key against Anthropic (`client.models.retrieve`) before encrypting and storing it; DELETE clears the column. UI: `AiSettingsDialog.vue` (Account menu → AI settings).
+- Local Ollama fallback unchanged: `server/utils/ollama.ts` (status + non-streaming chat, `think: false`, 90 s timeout, 503 when offline), config `OLLAMA_URL` (default `http://127.0.0.1:11434`), `OLLAMA_MODEL` (default `qwen3:8b`).
+- `server/utils/ai-prompts.ts` (pure prompt builders; forbid invented facts/metrics; answer in input language).
 - Routes `server/api/ai/`: `status.get`, `improve-title.post`, `draft-description.post`, `suggest-subtasks.post`, `achievement-summary.post` (done tasks in date range → manager-ready Markdown).
-- UI `app/components/ai/*` + `useAi()`; buttons disabled with reason tooltip when AI not ready.
+- UI `app/components/ai/*` + `useAi()` (`status.provider: 'claude' | 'ollama'`); buttons disabled with reason tooltip when AI not ready.
 
 ## UX decisions (M5)
 

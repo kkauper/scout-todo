@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { CircleUser, KeyRound, LogOut, Monitor, Moon, Sun } from '@lucide/vue'
+import { CircleUser, KeyRound, LogOut, Monitor, Moon, Sparkles, Sun } from '@lucide/vue'
 import { useColorMode } from '@vueuse/core'
 import { ref } from 'vue'
 
@@ -7,6 +7,7 @@ const { user, clear } = useUserSession()
 const { store } = useColorMode({ emitAuto: true })
 
 const passwordOpen = ref(false)
+const aiSettingsOpen = ref(false)
 
 async function onSignOut() {
   await clear()
@@ -43,6 +44,10 @@ async function onSignOut() {
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuItem @select="aiSettingsOpen = true">
+          <Sparkles />
+          AI settings
+        </DropdownMenuItem>
         <DropdownMenuItem @select="passwordOpen = true">
           <KeyRound />
           Change password
@@ -55,5 +60,6 @@ async function onSignOut() {
       </DropdownMenuContent>
     </DropdownMenu>
     <ChangePasswordDialog v-model:open="passwordOpen" />
+    <AiSettingsDialog v-model:open="aiSettingsOpen" />
   </div>
 </template>

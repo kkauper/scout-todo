@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const body = await readValidatedBody(event, bodySchema.parse)
   const { system, user } = draftDescriptionPrompt(body)
 
-  const text = await ollamaChat({ system, user })
+  const text = await aiChat(event, { system, user })
 
   return { text: text.slice(0, 5000) }
 })

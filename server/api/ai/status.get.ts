@@ -1,3 +1,3 @@
-export default defineEventHandler(async () => {
-  return ollamaStatus()
+export default defineEventHandler(async (event) => {
+  return aiStatus(event)
 })

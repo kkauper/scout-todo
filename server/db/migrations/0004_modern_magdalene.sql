@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "anthropic_api_key" text;

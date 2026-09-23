@@ -36,7 +36,10 @@ Caching is disabled because writes don't invalidate cached reads. Paste the prin
 
 ```bash
 pnpm exec wrangler secret put NUXT_SESSION_PASSWORD     # from: openssl rand -base64 32
+pnpm exec wrangler secret put NUXT_ENCRYPTION_KEY       # openssl rand -base64 32
 ```
+
+If you're updating an existing deployment, run migration `0004` against Supabase before deploying (`DATABASE_URL='<supabase url>' pnpm run db:migrate`) — it adds the column used to store per-user Claude API keys.
 
 ## 5. Users
 
@@ -72,7 +75,7 @@ Put `NUXT_SESSION_PASSWORD` in `.dev.vars` for local preview.
 
 ## 8. Notes
 
-- AI is disabled in the cloud deployment (`OLLAMA_URL` is empty).
+- Ollama is unreachable in the cloud deployment (`OLLAMA_URL` is empty), but AI works once a user saves their own Claude API key in Account → AI settings.
 - Rotating `NUXT_SESSION_PASSWORD` signs everyone out.
 
 ### Upgrading from a single-account deployment

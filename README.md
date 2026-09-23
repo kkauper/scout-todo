@@ -147,6 +147,11 @@ Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local P
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API endpoint (optional) |
 | `OLLAMA_MODEL` | `qwen3:8b` | LLM model to use (optional; configure via Ollama) |
 | `NUXT_SESSION_PASSWORD` | — | Session cookie encryption key, min 32 chars: `openssl rand -base64 32` (required) |
+| `NUXT_ENCRYPTION_KEY` | — | Encrypts per-user Claude API keys, min 32 chars: `openssl rand -base64 32` (required for AI settings) |
+
+## AI
+
+AI features (improve title, draft description, suggest sub-todos, achievement summary) use Claude if you add your own Anthropic API key in Account → AI settings; otherwise they fall back to local Ollama.
 
 ## Tech stack
 

@@ -94,7 +94,7 @@ export default defineEventHandler(async (event) => {
     tasks: promptTasks,
   })
 
-  const text = await ollamaChat({ system, user })
+  const text = await aiChat(event, { system, user })
 
   return { text, count: taskRows.length }
 })

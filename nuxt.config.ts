@@ -10,6 +10,7 @@ export default defineNuxtConfig({
   shadcn: { prefix: '', componentDir: '~/components/ui' },
   nitro: { experimental: { asyncContext: true } },
   runtimeConfig: {
+    encryptionKey: '', // NUXT_ENCRYPTION_KEY
     session: {
       maxAge: 60 * 60 * 24 * 30,
       password: '', // NUXT_SESSION_PASSWORD

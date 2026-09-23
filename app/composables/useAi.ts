@@ -1,6 +1,7 @@
 import { computed } from 'vue'
 
 interface AiStatus {
+  provider: 'claude' | 'ollama'
   available: boolean
   model: string
   modelInstalled: boolean
@@ -14,7 +15,7 @@ export function useAi() {
       status.value = await $fetch<AiStatus>('/api/ai/status')
     }
     catch {
-      status.value = { available: false, model: '', modelInstalled: false }
+      status.value = { provider: 'ollama', available: false, model: '', modelInstalled: false }
     }
   }
 
@@ -22,7 +23,7 @@ export function useAi() {
 
   const reason = computed(() => {
     if (!status.value) return 'Checking local AI…'
-    if (!status.value.available) return 'Local AI offline — start Ollama'
+    if (!status.value.available) return 'Local AI offline — start Ollama or add a Claude API key in Account → AI settings'
     if (!status.value.modelInstalled) return `Model ${status.value.model} not installed — run: ollama pull ${status.value.model}`
     return ''
   })

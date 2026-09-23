@@ -11,6 +11,7 @@ const formatSchema = {
     items: { type: 'array', items: { type: 'string' } },
   },
   required: ['items'],
+  additionalProperties: false,
 }
 
 const resultSchema = z.object({ items: z.array(z.string()) })
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
   const body = await readValidatedBody(event, bodySchema.parse)
   const { system, user } = subtasksPrompt(body)
 
-  const content = await ollamaChat({ system, user, format: formatSchema })
+  const content = await aiChat(event, { system, user, schema: formatSchema })
 
   let parsed: z.infer<typeof resultSchema>
   try {
