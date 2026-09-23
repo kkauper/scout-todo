@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "scout",
+  "main": "./.output/server/index.mjs",
+  "assets": { "directory": "./.output/public", "binding": "ASSETS" },
+  "compatibility_date": "2026-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "routes": [
+    { "pattern": "scout.kauper.co", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "vars": { "OLLAMA_URL": "" },
+  "hyperdrive": [
+    { "binding": "HYPERDRIVE", "id": "689da073ecf647eebf6902591c263720" }
+  ],
+  "ratelimits": [
+    { "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }
+  ]
+}

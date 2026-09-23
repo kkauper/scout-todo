@@ -18,6 +18,7 @@ function modelMatches(installed: string, wanted: string): boolean {
 
 export async function ollamaStatus(): Promise<{ available: boolean; model: string; modelInstalled: boolean }> {
   const { url, model } = ollamaConfig()
+  if (url === '') return { available: false, model, modelInstalled: false }
   try {
     const res = await fetch(`${url}/api/tags`, { signal: AbortSignal.timeout(2000) })
     if (!res.ok) return { available: false, model, modelInstalled: false }
@@ -38,6 +39,7 @@ export async function ollamaChat(input: {
   temperature?: number
 }): Promise<string> {
   const { url, model } = ollamaConfig()
+  if (url === '') throw createError({ statusCode: 503, statusMessage: 'AI is disabled in this deployment' })
 
   let res: Response
   try {
