@@ -164,7 +164,7 @@ async function confirmDelete() {
       :data-column-id="column.id"
       :filter="'[data-no-drag]'"
       :prevent-on-filter="false"
-      class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-2 pb-2"
+      class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-2 pt-1 pb-2"
       @end="onEnd"
     >
       <li
