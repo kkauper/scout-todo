@@ -28,40 +28,40 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 ## Requirements
 
 - Node 24+
-- npm
+- pnpm
 - Docker Desktop
 
 ## Setup
 
 ```bash
 cp .env.example .env
-npm install
-npm run db:up
-npm run db:migrate
-npm run db:seed          # sample data; refuses if tasks exist
-npm run dev              # http://localhost:3000
+pnpm install
+pnpm db:up
+pnpm db:migrate
+pnpm db:seed          # sample data; refuses if tasks exist
+pnpm dev              # http://localhost:3000
 ```
 
-If you want a clean reset, run `npm run db:seed -- --reset`. This wipes and reseeds the database and is destructive.
+If you want a clean reset, run `pnpm db:seed -- --reset`. This wipes and reseeds the database and is destructive.
 
 ## Scripts
 
 | Script | Purpose |
 |---|---|
-| `npm run build` | Build for production |
-| `npm run dev` | Start the app at http://localhost:3000 |
-| `npm run generate` | Generate a static site |
-| `npm run preview` | Preview the production build |
-| `npm run postinstall` | Prepare Nuxt after install |
-| `npm run db:up` | Start the PostgreSQL Docker container |
-| `npm run db:down` | Stop the PostgreSQL Docker container |
-| `npm run db:generate` | Generate Drizzle migrations from the schema |
-| `npm run db:migrate` | Apply pending Drizzle migrations |
-| `npm run db:seed` | Fill the database with sample data |
-| `npm run db:studio` | Open Drizzle Studio |
-| `npm run test` | Run the unit tests once |
-| `npm run test:watch` | Run tests in watch mode |
-| `npm run typecheck` | Check the TypeScript types |
+| `pnpm build` | Build for production |
+| `pnpm dev` | Start the app at http://localhost:3000 |
+| `pnpm generate` | Generate a static site |
+| `pnpm preview` | Preview the production build |
+| `pnpm postinstall` | Prepare Nuxt after install |
+| `pnpm db:up` | Start the PostgreSQL Docker container |
+| `pnpm db:down` | Stop the PostgreSQL Docker container |
+| `pnpm db:generate` | Generate Drizzle migrations from the schema |
+| `pnpm db:migrate` | Apply pending Drizzle migrations |
+| `pnpm db:seed` | Fill the database with sample data |
+| `pnpm db:studio` | Open Drizzle Studio |
+| `pnpm test` | Run the unit tests once |
+| `pnpm test:watch` | Run tests in watch mode |
+| `pnpm typecheck` | Check the TypeScript types |
 
 ## Tech stack
 
@@ -122,8 +122,8 @@ Use the Copy summary action in the KPI panel to export the metrics as Markdown.
 To update the schema:
 
 1. Edit `server/db/schema.ts`
-2. Run `npm run db:generate`
-3. Run `npm run db:migrate`
+2. Run `pnpm db:generate`
+3. Run `pnpm db:migrate`
 
 ## Toolchain note
 
