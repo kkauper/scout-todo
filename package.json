@@ -54,5 +54,6 @@
     "typescript": "^6.0.3",
     "vitest": "^5.0.1",
     "vue-tsc": "^3.3.11"
-  }
+  },
+  "packageManager": "pnpm@12.3.4"
 }
