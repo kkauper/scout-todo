@@ -5,12 +5,12 @@ import { AlertCircle, Check, EllipsisVertical, Pencil, X } from '@lucide/vue'
 import type { Task } from '#shared/types/domain'
 import { daysBetween, isOverdue, localDateIso } from '#shared/utils/dates'
 import { useBoardStore } from '../../stores/board'
-import { useTaskDialog } from '../../composables/useTaskDialog'
+import { useTaskPanel } from '../../composables/useTaskPanel'
 
 const props = defineProps<{ task: Task }>()
 
 const store = useBoardStore()
-const { openEdit } = useTaskDialog()
+const { openTask } = useTaskPanel()
 
 const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 60_000) })
 
@@ -124,8 +124,8 @@ function onDelete() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem @click="openEdit(task.id)">
-              Edit
+            <DropdownMenuItem @click="openTask(task.id)">
+              Open
             </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>

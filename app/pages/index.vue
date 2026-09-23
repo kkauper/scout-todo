@@ -1,14 +1,20 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { ChartColumn, Folder, Plus } from '@lucide/vue'
 import { useBoardStore } from '../stores/board'
 import { useTaskDialog } from '../composables/useTaskDialog'
+import { useTaskPanel } from '../composables/useTaskPanel'
 
 const store = useBoardStore()
 await callOnce('board', () => store.load())
 
 const { openCreate } = useTaskDialog()
+const { closeTask } = useTaskPanel()
 const kpiOpen = useState('kpiOpen', () => false)
+
+watch(kpiOpen, (open) => {
+  if (open) closeTask()
+})
 
 const filterValue = computed<string>({
   get() {
@@ -26,13 +32,13 @@ const filterValue = computed<string>({
 
 <template>
   <div class="flex h-dvh flex-col overflow-hidden">
-    <header class="bg-background/80 backdrop-blur border-b px-4 h-14 flex items-center gap-3">
-      <h1 class="font-semibold">
+    <header class="bg-background/80 backdrop-blur border-b px-3 sm:px-4 h-14 flex items-center gap-2 sm:gap-3">
+      <h1 class="font-semibold shrink-0">
         <ScoutLogo decorative class="h-5 w-auto text-foreground dark:text-brand-lime" />
         <span class="sr-only">Scout</span>
       </h1>
       <Select v-model="filterValue">
-        <SelectTrigger class="w-48">
+        <SelectTrigger class="min-w-0 flex-1 sm:flex-none sm:w-48">
           <SelectValue placeholder="All projects" />
         </SelectTrigger>
         <SelectContent>
@@ -46,20 +52,21 @@ const filterValue = computed<string>({
           </SelectItem>
         </SelectContent>
       </Select>
-      <div class="flex-1" />
-      <Button @click="openCreate()">
+      <div class="hidden sm:block flex-1" />
+      <Button class="shrink-0 max-sm:size-9 max-sm:px-0" @click="openCreate()">
         <Plus />
-        New task
+        <span class="max-sm:sr-only">New task</span>
       </Button>
       <Button
         variant="outline"
         aria-haspopup="dialog"
+        class="shrink-0 max-sm:size-9 max-sm:px-0"
         @click="kpiOpen = true"
       >
         <ChartColumn />
-        KPIs
+        <span class="max-sm:sr-only">KPIs</span>
       </Button>
-      <ColorModeToggle />
+      <AccountMenu />
     </header>
     <div v-if="store.lastError" role="alert" class="bg-destructive/10 text-destructive text-sm px-4 py-2 flex justify-between">
       <span>{{ store.lastError }}</span>
@@ -71,6 +78,7 @@ const filterValue = computed<string>({
       <main class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <KanbanBoard />
       </main>
+      <TaskPanel />
     </div>
     <Sheet v-model:open="kpiOpen">
       <SheetContent side="right" class="gap-0 overflow-y-auto p-0 data-[side=right]:w-full data-[side=right]:sm:w-[50vw] data-[side=right]:sm:min-w-[40rem] data-[side=right]:sm:max-w-none">

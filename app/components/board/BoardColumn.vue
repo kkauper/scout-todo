@@ -6,12 +6,12 @@ import { Circle, CircleCheck, CircleDot, MoreHorizontal } from '@lucide/vue'
 import { COLUMN_KIND_LABELS, COLUMN_KINDS } from '#shared/types/domain'
 import type { BoardColumn, ColumnKind, Task } from '#shared/types/domain'
 import { useBoardStore } from '../../stores/board'
-import { useTaskDialog } from '../../composables/useTaskDialog'
+import { useTaskPanel } from '../../composables/useTaskPanel'
 
 const props = defineProps<{ column: BoardColumn }>()
 
 const store = useBoardStore()
-const { openEdit } = useTaskDialog()
+const { taskId, openTask } = useTaskPanel()
 
 const items = ref<Task[]>([])
 watchEffect(() => {
@@ -32,7 +32,7 @@ function onCardClick(e: MouseEvent, taskId: string) {
   if (wasEditing.value) return
   const target = e.target as HTMLElement
   if (target.closest('button, a, input, textarea, select, [role="checkbox"], [role="menuitem"], [data-no-open]')) return
-  openEdit(taskId)
+  openTask(taskId)
 }
 
 const KIND_ICON = { open: Circle, active: CircleDot, done: CircleCheck } as const
@@ -174,10 +174,11 @@ async function confirmDelete() {
         tabindex="0"
         :data-task-id="t.id"
         :aria-label="`${t.title}, ${column.name}`"
-        class="group/card list-none shrink-0 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        :aria-current="taskId === t.id ? 'true' : undefined"
+        class="group/card list-none shrink-0 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
         @pointerdown.capture="wasEditing = inlineEditing"
         @click="onCardClick($event, t.id)"
-        @keydown.enter.self.prevent="openEdit(t.id)"
+        @keydown.enter.self.prevent="openTask(t.id)"
       >
         <TaskCard :task="t" />
       </li>

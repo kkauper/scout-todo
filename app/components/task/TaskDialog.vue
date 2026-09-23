@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { COLUMN_KIND_LABELS } from '#shared/types/domain'
-import type { StateEvent } from '#shared/types/domain'
 import { useBoardStore } from '../../stores/board'
 import { useTaskDialog } from '../../composables/useTaskDialog'
 import AiTitleSuggestions from '../ai/AiTitleSuggestions.vue'
@@ -31,11 +29,7 @@ const description = computed<string>({
 })
 
 const moreOpen = ref(false)
-const events = ref<StateEvent[]>([])
-const activeTab = ref<'details' | 'history'>('details')
-
-const currentTask = computed(() => (dialog.value.taskId ? store.tasks.find((t) => t.id === dialog.value.taskId) ?? null : null))
-const showMore = computed(() => dialog.value.mode === 'edit' || moreOpen.value)
+const showMore = computed(() => moreOpen.value)
 
 function defaultCreateColumnId(): string | null {
   if (dialog.value.columnId) return dialog.value.columnId
@@ -44,84 +38,44 @@ function defaultCreateColumnId(): string | null {
   return store.visibleColumns[0]?.id ?? null
 }
 
-function fromLabel(e: StateEvent): string {
-  return e.fromColumnId ? (store.columnById.get(e.fromColumnId)?.name ?? 'created') : 'created'
-}
-
-function toLabel(e: StateEvent): string {
-  if (e.toColumnId) return store.columnById.get(e.toColumnId)?.name ?? 'deleted column'
-  return `deleted column (${COLUMN_KIND_LABELS[e.toKind]})`
-}
-
 watch(() => dialog.value.open, (isOpen) => {
   if (!isOpen) return
 
   moreOpen.value = false
-  events.value = []
   draftChecklist.value = []
-  activeTab.value = 'details'
 
-  if (dialog.value.mode === 'edit') {
-    const task = currentTask.value
-    if (task) {
-      form.value = {
-        title: task.title,
-        description: task.description,
-        projectId: task.projectId,
-        deadline: task.deadline,
-        tagIds: [...task.tagIds],
-        columnId: task.columnId,
-      }
-      store.fetchEvents(task.id).then((result) => { events.value = result })
-    }
-  }
-  else {
-    const projectId = store.projectFilter && store.projectFilter !== 'none' ? store.projectFilter : null
-    form.value = {
-      title: dialog.value.title,
-      description: null,
-      projectId,
-      deadline: null,
-      tagIds: [],
-      columnId: defaultCreateColumnId(),
-    }
+  const projectId = store.projectFilter && store.projectFilter !== 'none' ? store.projectFilter : null
+  form.value = {
+    title: dialog.value.title,
+    description: null,
+    projectId,
+    deadline: null,
+    tagIds: [],
+    columnId: defaultCreateColumnId(),
   }
 })
 
 async function onAddSuggested(titles: string[]) {
   if (!titles.length) return
-  if (dialog.value.mode === 'edit' && dialog.value.taskId) await store.addChecklistItems(dialog.value.taskId, titles)
-  else draftChecklist.value.push(...titles)
+  draftChecklist.value.push(...titles)
 }
 
 async function save() {
   const title = form.value.title.trim()
   if (!title) return
 
-  if (dialog.value.mode === 'create') {
-    const result = await store.createTask({
-      title,
-      columnId: form.value.columnId ?? undefined,
-      projectId: form.value.projectId,
-      description: form.value.description,
-      deadline: form.value.deadline,
-      tagIds: form.value.tagIds,
-    })
-    if (result) {
-      if (draftChecklist.value.length > 0) {
-        await store.addChecklistItems(result.id, draftChecklist.value)
-      }
-      close()
+  const result = await store.createTask({
+    title,
+    columnId: form.value.columnId ?? undefined,
+    projectId: form.value.projectId,
+    description: form.value.description,
+    deadline: form.value.deadline,
+    tagIds: form.value.tagIds,
+  })
+  if (result) {
+    if (draftChecklist.value.length > 0) {
+      await store.addChecklistItems(result.id, draftChecklist.value)
     }
-  }
-  else if (dialog.value.taskId) {
-    await store.updateTask(dialog.value.taskId, {
-      title,
-      description: form.value.description,
-      projectId: form.value.projectId,
-      deadline: form.value.deadline,
-      tagIds: form.value.tagIds,
-    })
     close()
   }
 }
@@ -129,70 +83,15 @@ async function save() {
 
 <template>
   <Dialog v-model:open="dialog.open">
-    <DialogContent class="max-h-[85vh] flex flex-col">
+    <DialogContent class="sm:max-w-xl max-h-[85vh] flex flex-col">
       <DialogHeader>
-        <DialogTitle>{{ dialog.mode === 'create' ? 'New task' : 'Edit task' }}</DialogTitle>
+        <DialogTitle>New task</DialogTitle>
         <DialogDescription class="sr-only">
-          {{ dialog.mode === 'create' ? 'Create a new task' : 'Update the task details' }}
+          Create a new task
         </DialogDescription>
       </DialogHeader>
       <form class="flex flex-1 flex-col min-h-0" @submit.prevent="save">
-        <Tabs v-if="dialog.mode === 'edit'" v-model="activeTab" class="flex flex-1 flex-col min-h-0">
-          <TabsList>
-            <TabsTrigger value="details">
-              Details
-            </TabsTrigger>
-            <TabsTrigger value="history">
-              History ({{ events.length }})
-            </TabsTrigger>
-          </TabsList>
-          <TabsContent value="details" class="overflow-y-auto min-h-0 space-y-4">
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <Label for="task-title">Title</Label>
-                <AiTitleSuggestions :title="form.title" :description="form.description" :project-name="projectName" @pick="(t) => (form.title = t)" />
-              </div>
-              <Input id="task-title" v-model="form.title" required autofocus maxlength="200" />
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <ProjectPicker v-model="form.projectId" />
-              <DeadlinePicker v-model="form.deadline" />
-            </div>
-            <TagPicker v-model="form.tagIds" />
-            <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
-                <Label for="task-description">Description</Label>
-                <AiDescriptionButton :title="form.title" :project-name="projectName" :tags="tagNames" :existing="form.description" @result="(t) => (form.description = t)" />
-              </div>
-              <Textarea id="task-description" v-model="description" rows="4" />
-            </div>
-
-            <ChecklistEditor
-              :task-id="dialog.taskId"
-              v-model:draft="draftChecklist"
-            />
-            <AiSubtaskSuggestions :title="form.title" :description="form.description" @add="onAddSuggested" />
-          </TabsContent>
-          <TabsContent value="history" class="overflow-y-auto min-h-0 space-y-2">
-            <dl v-if="currentTask" class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <dt>Created</dt>
-              <dd>{{ new Date(currentTask.createdAt).toLocaleString() }}</dd>
-              <dt>Last state change</dt>
-              <dd>{{ new Date(currentTask.stateChangedAt).toLocaleString() }}</dd>
-              <template v-if="currentTask.completedAt">
-                <dt>Completed</dt>
-                <dd>{{ new Date(currentTask.completedAt).toLocaleString() }}</dd>
-              </template>
-            </dl>
-            <ul class="space-y-1 text-xs text-muted-foreground">
-              <li v-for="(e, i) in events" :key="i">
-                {{ fromLabel(e) }} → {{ toLabel(e) }} · {{ new Date(e.changedAt).toLocaleString() }}
-              </li>
-            </ul>
-          </TabsContent>
-        </Tabs>
-
-        <div v-else class="flex-1 overflow-y-auto min-h-0 space-y-4">
+        <div class="flex-1 overflow-y-auto min-h-0 space-y-4">
           <div class="space-y-1.5">
             <div class="flex items-center justify-between">
               <Label for="task-title">Title</Label>
