@@ -100,10 +100,15 @@ pnpm install
 pnpm run db:up
 pnpm run db:migrate
 pnpm run db:seed       # sample data; refuses if tasks exist
+pnpm run user:add <name>   # create your account; also set NUXT_SESSION_PASSWORD in .env
 pnpm run dev           # http://localhost:3000
 ```
 
+If you're upgrading from a single-account setup, existing data belongs to a placeholder account named `owner`. Set its password with `pnpm run user:passwd owner`.
+
 If you want a clean reset, run `pnpm run db:seed -- --reset`. This wipes and reseeds the database and is destructive.
+
+**Deploy to Cloudflare**: see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 **Optional: local AI**
 ```bash
@@ -127,8 +132,11 @@ Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local P
 | `pnpm run db:migrate` | Apply pending Drizzle migrations |
 | `pnpm run db:seed` | Fill the database with sample data |
 | `pnpm run db:studio` | Open Drizzle Studio |
+| `pnpm run user:add` | Create a new account (prompts for a password) |
+| `pnpm run user:passwd` | Set/reset an account's password |
 | `pnpm run test` | Run the unit tests once |
 | `pnpm run test:watch` | Run tests in watch mode |
+| `pnpm run test:isolation` | Run the multi-user data isolation integration test |
 | `pnpm run typecheck` | Check the TypeScript types |
 
 ## Configuration
@@ -138,6 +146,7 @@ Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local P
 | `DATABASE_URL` | `postgres://scout:scout@localhost:5433/scout` | PostgreSQL connection string |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API endpoint (optional) |
 | `OLLAMA_MODEL` | `qwen3:8b` | LLM model to use (optional; configure via Ollama) |
+| `NUXT_SESSION_PASSWORD` | — | Session cookie encryption key, min 32 chars: `openssl rand -base64 32` (required) |
 
 ## Tech stack
 

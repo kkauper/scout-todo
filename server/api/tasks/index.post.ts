@@ -1,4 +1,4 @@
-import { asc, eq, sql } from 'drizzle-orm'
+import { and, asc, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 
 const bodySchema = z.object({
@@ -11,6 +11,7 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   const now = new Date()
@@ -19,15 +20,17 @@ export default defineEventHandler(async (event) => {
     return await db.transaction(async (tx) => {
       let targetColumn: typeof schema.boardColumns.$inferSelect | undefined
       if (body.columnId !== undefined) {
-        const [col] = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, body.columnId))
+        const [col] = await tx.select().from(schema.boardColumns).where(and(eq(schema.boardColumns.id, body.columnId), eq(schema.boardColumns.userId, userId)))
         if (!col) throw createError({ statusCode: 400, statusMessage: 'Unknown columnId' })
         targetColumn = col
       }
       else {
-        const columns = await tx.select().from(schema.boardColumns).orderBy(asc(schema.boardColumns.position))
+        const columns = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.userId, userId)).orderBy(asc(schema.boardColumns.position))
         targetColumn = columns.find(c => c.kind === 'open' && !c.hidden) ?? columns[0]
         if (!targetColumn) throw createError({ statusCode: 500, statusMessage: 'No columns exist' })
       }
+
+      await assertOwnedRefs(tx, userId, { projectId: body.projectId, tagIds: body.tagIds }, 'Invalid projectId or tagIds')
 
       const [maxRow] = await tx
         .select({ maxPos: sql<number | null>`max(${schema.tasks.position})` })
@@ -38,6 +41,7 @@ export default defineEventHandler(async (event) => {
       const [row] = await tx
         .insert(schema.tasks)
         .values({
+          userId,
           title: body.title,
           description: body.description ?? null,
           projectId: body.projectId ?? null,

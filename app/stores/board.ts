@@ -6,6 +6,8 @@ import { transitionPatch } from '#shared/utils/transitions'
 import { positionAtIndex, positionBetween } from '#shared/utils/position'
 
 export const useBoardStore = defineStore('board', () => {
+  const requestFetch = useRequestFetch()
+
   const projects = ref<Project[]>([])
   const tags = ref<Tag[]>([])
   const tasks = ref<Task[]>([])
@@ -37,17 +39,33 @@ export const useBoardStore = defineStore('board', () => {
   }
 
   async function load() {
-    const data = await $fetch<BoardData>('/api/board')
-    projects.value = data.projects
-    tags.value = data.tags
-    tasks.value = data.tasks
-    columns.value = data.columns
-    loaded.value = true
+    try {
+      const data = await requestFetch<BoardData>('/api/board')
+      projects.value = data.projects
+      tags.value = data.tags
+      tasks.value = data.tasks
+      columns.value = data.columns
+      loaded.value = true
+    }
+    catch (e) {
+      if (import.meta.client && isUnauthorized(e)) {
+        const { clear } = useUserSession()
+        await clear()
+        await navigateTo('/login')
+        return
+      }
+      throw e
+    }
   }
 
   function extractErrorMessage(e: unknown): string {
     const err = e as { data?: { statusMessage?: string }; statusMessage?: string; message?: string }
     return err?.data?.statusMessage ?? err?.statusMessage ?? err?.message ?? 'Request failed'
+  }
+
+  function isUnauthorized(e: unknown): boolean {
+    const err = e as { statusCode?: number; status?: number } | undefined
+    return err?.statusCode === 401 || err?.status === 401
   }
 
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {
@@ -57,6 +75,12 @@ export const useBoardStore = defineStore('board', () => {
       return result
     }
     catch (e) {
+      if (isUnauthorized(e)) {
+        const { clear } = useUserSession()
+        await clear()
+        await navigateTo('/login')
+        return undefined
+      }
       lastError.value = extractErrorMessage(e)
       await load()
       return undefined

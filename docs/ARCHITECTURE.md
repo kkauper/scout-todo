@@ -193,15 +193,17 @@ Mutations optimistic: apply locally (using `shared/` logic), call API, replace w
 ### Screen layout (`pages/index.vue`)
 
 ```
-┌ Header: "Scout" | Project filter (Select) | [+ Task] | [KPIs toggle] ┐
-├ Board: user-managed columns, horizontal scroll ───┬ KPI panel (Sheet, right) ┤
-│ [Column header: kind icon, label, count Badge,    │  scope follows project filter        │
-│  actions DropdownMenu]                            │                                      │
-│ TaskCards (draggable, click opens edit dialog)    │                                      │
+┌ Header: "Scout" | Project filter (Select) | [+ Task] | [KPIs toggle] | [Account menu] ─┐
+├ Board: user-managed columns, horizontal scroll ───┬ TaskPanel (docked, optional) ┤
+│ [Column header: kind icon, label, count Badge,    │  edit UI for the open task,          │
+│  actions DropdownMenu]                            │  autosave, no Save button            │
+│ TaskCards (draggable, click opens TaskPanel)      │                                      │
 │ + Add task (inline input)                         │                                      │
 │ … + Add column / Hidden columns (n) ──────────────┘                                      │
 └───────────────────────────────────────────────────┴──────────────────────────────────────┘
 ```
+
+KPIs open in a separate `Sheet` (right, overlay) and close the `TaskPanel` if it was open (only one right-side panel at a time).
 
 Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`; after the last column sits an "add column" widget (ghost button → inline name + kind form) and, when any columns are hidden, a "Hidden columns (n)" `DropdownMenu` to unhide them.
 
@@ -212,14 +214,14 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 | Task card | `Card`, `CardHeader`, `CardTitle`, `CardContent` |
 | Project label | `common/ProjectBadge` — filled rounded rectangle (swatch tint via `color-mix`), `Folder` icon, no dot |
 | Tag chips | `common/ColorBadge` — outline pill (`rounded-full`) with color dot via `--swatch-*` |
-| Theme switch | `common/ColorModeToggle` (`useColorMode` → `store` ref: light / dark / auto) |
-| Edit dialog sections | `Tabs`: Details / History (n); create mode has no tabs |
+| Account menu | `common/AccountMenu` — user name, theme switch (`useColorMode` → `store` ref: light / dark / auto), sign out |
+| Task edit (docked panel) | `task/TaskPanel` — non-modal `<aside>`, docked right on `md`+, full-screen below `md`; autosave per field, Activity section (no tabs) |
 | Column count | `Badge variant="secondary"` |
 | Column kind indicator | `Circle`/`CircleDot`/`CircleCheck` (lucide) + `Tooltip`, `aria-label` = kind label |
 | Column actions (rename, type, move, hide, delete) | `DropdownMenu` + `DropdownMenuSub` › `DropdownMenuRadioGroup` for "Type" |
 | Task actions (edit, move to…, delete) | `DropdownMenu` + `DropdownMenuSub` for "Move to" (keyboard alternative to drag) |
 | Delete confirm (task or column) | `AlertDialog`; column delete shows a `Select` of other columns when it still has tasks |
-| Create/edit task (expanded) | `Dialog` + `Input`, `Textarea`, `Label`, `Button`, `Select` (create-mode column picker) |
+| Create task (expanded) | `Dialog` (create-only) + `Input`, `Textarea`, `Label`, `Button`, `Select` (column picker) |
 | Inline quick-add | `Input` + `Button` inside column |
 | Project / tag pick + inline create | `Popover` + `Command` (combobox; "Create “xyz”" item when no exact match) |
 | Color choice on inline create | `common/ColorPicker` (radio group of swatch buttons) |
@@ -230,7 +232,9 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 
 ### Card click behavior
 
-The task `<li>` has a single `click` handler (`BoardColumn.vue`'s `onCardClick`): it opens the edit dialog unless `event.target` is inside an interactive element — `closest('button, a, input, textarea, select, [role="checkbox"], [role="menuitem"], [data-no-open]')` — in which case it returns early and lets that element's own handler run (project/tag pickers, the rename button, the actions menu, checklist controls). `dblclick` is not used any more; dragging still starts on pointer movement (SortableJS) independent of the click handler. `CardChecklist`'s root carries `data-no-open` so any click inside the sub-todo list (toggle, add-row) never opens the dialog. Keyboard: the `<li>` is focusable and `Enter` opens the edit dialog via `@keydown.enter.self.prevent`.
+The task `<li>` has a single `click` handler (`BoardColumn.vue`'s `onCardClick`): it opens the docked `TaskPanel` (`useTaskPanel().openTask`) unless `event.target` is inside an interactive element — `closest('button, a, input, textarea, select, [role="checkbox"], [role="menuitem"], [data-no-open]')` — in which case it returns early and lets that element's own handler run (project/tag pickers, the rename button, the actions menu, checklist controls). `dblclick` is not used any more; dragging still starts on pointer movement (SortableJS) independent of the click handler. `CardChecklist`'s root carries `data-no-open` so any click inside the sub-todo list (toggle, add-row) never opens the panel. Keyboard: the `<li>` is focusable and `Enter` opens the panel via `@keydown.enter.self.prevent`. The `<li>` for the currently open task gets `aria-current="true"` and a ring highlight.
+
+`TaskPanel.vue` is a non-modal `<aside>` (not a `Dialog`): docked to the right of the board on `md`+ screens (`w-[28rem] lg:w-[32rem]`, board still visible/draggable), full-screen (`fixed inset-0`) below `md`. It has no Save button — every field autosaves (`store.updateTask` per changed field), with a "Saving…"/"Saved" status next to the title. Title and description use local drafts that commit on blur/Enter and flush against the previous task's id before switching to a newly opened task, so clicking another card without blurring never loses an edit. `Escape` closes the panel unless a nested popover/menu already handled it (`event.defaultPrevented`); closing (Escape or the X button) returns focus to the task's card. Creating a task still uses the modal `TaskDialog` (`useTaskDialog`).
 
 Inline edits (card title, column rename) set `useState('inlineEditing')`. Each `<li>` records that flag on `pointerdown` (capture); if an inline edit was active, the following click only ends the edit (blur → save) and never opens a dialog. Inline inputs: Enter/`Check` button = save, Escape/`X` button = cancel (commit functions guard against the blur that fires when the input unmounts).
 
@@ -252,6 +256,14 @@ Card title is plain text (not a button); renaming happens via a small ghost `Pen
 - API: `POST /api/tasks/:id/checklist { titles[] }`, `PATCH /api/checklist/:id { title?, done?, position? }`, `DELETE /api/checklist/:id`. Mutations bump parent `tasks.updated_at`.
 - UI: `board/CardChecklist` (progress `n/m` + expandable checkbox list on card), `task/ChecklistEditor` (dialog; draft mode before task exists).
 
+## Auth
+
+Username/password login via `nuxt-auth-utils` sealed httpOnly cookie sessions (no JWT); cookie encryption key from `NUXT_SESSION_PASSWORD` (min 32 chars). Accounts come from the `users` table (see below), passwords stored as PBKDF2-SHA256 hashes (`server/utils/password.ts`). `POST /api/auth/login` looks up the user and checks the password via `verifyCredentials` (`server/utils/login.ts`), which also hashes against a dummy value for unknown users so timing does not reveal which usernames exist, then calls `setUserSession`. `POST /api/auth/password { currentPassword, newPassword }` lets a signed-in user change their own password (UI: account menu → Change password). Server middleware `server/middleware/auth.ts` denies every `/api/**` route by default (`requireUserSession`), except `/api/auth/login` and `/api/_auth/*` (the module's own session endpoints). Client-side, `app/middleware/auth.global.ts` redirects to `/login` when signed out and away from `/login` when signed in; `app/stores/board.ts` uses `useRequestFetch()` for `load()` so the session cookie is forwarded during SSR, and treats any 401 from a mutation as a sign-out (redirects to `/login` instead of reloading the board).
+
+## Accounts & isolation
+
+Accounts live in a `users` table (`id`, `username` unique, `password_hash` nullable, `created_at`); there is no public registration, accounts are created with `pnpm user:add <name>` and reset with `pnpm user:passwd <name>` (both prompt for a password, `server/db/users.ts`). Every `projects`, `tags`, `board_columns`, and `tasks` row carries a `user_id` (cascade on delete); child tables (`task_tags`, `checklist_items`, `task_state_events`) derive ownership through their parent task. Isolation is enforced in application code, not via Postgres RLS: every handler calls `requireUserId(event)` (`server/utils/owner.ts`) first and scopes its queries with `eq(table.userId, userId)`. An `[id]` route param belonging to another user always 404s; an id referenced in a request body/query (`projectId`, `columnId`, `tagIds`, `moveTo`) belonging to another user 400s — checked up front via `assertOwnedRefs(db, userId, refs, message)`. Session shape is `{ user: { id, name }, loggedInAt }`; a session without `user.id` is cleared and rejected with 401.
+
 ## Local AI (Ollama)
 
 - Optional. Config `OLLAMA_URL` (default `http://127.0.0.1:11434`), `OLLAMA_MODEL` (default `qwen3:8b`).
@@ -268,4 +280,4 @@ Card title is plain text (not a button); renaming happens via a small ghost `Pen
 
 ## Extensibility notes
 
-Time tracking → new `time_entries` table keyed on task. Dependencies → `task_links`. Team → `owner_id` columns. Event table already supports history/timeline views.
+Time tracking → new `time_entries` table keyed on task. Dependencies → `task_links`. Shared projects → membership table on top of `user_id` ownership. Event table already supports history/timeline views.

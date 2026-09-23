@@ -7,10 +7,12 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   try {
     const [row] = await db.insert(schema.projects).values({
+      userId,
       name: body.name,
       ...(body.color !== undefined ? { color: body.color } : {}),
     }).returning()

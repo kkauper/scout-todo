@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { ChecklistItem } from '#shared/types/domain'
 
@@ -8,13 +8,14 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event): Promise<ChecklistItem[]> => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   const now = new Date()
 
   return await db.transaction(async (tx) => {
-    const [task] = await tx.select({ id: schema.tasks.id }).from(schema.tasks).where(eq(schema.tasks.id, id))
+    const [task] = await tx.select({ id: schema.tasks.id }).from(schema.tasks).where(and(eq(schema.tasks.id, id), eq(schema.tasks.userId, userId)))
     if (!task) throw createError({ statusCode: 404 })
 
     const [maxRow] = await tx

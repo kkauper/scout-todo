@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, getTableColumns } from 'drizzle-orm'
 import { z } from 'zod'
 import type { ChecklistItem } from '#shared/types/domain'
 
@@ -12,13 +12,18 @@ const bodySchema = z
   .refine(b => b.title !== undefined || b.done !== undefined || b.position !== undefined, { message: 'At least one field required' })
 
 export default defineEventHandler(async (event): Promise<ChecklistItem> => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   const now = new Date()
 
   return await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(schema.checklistItems).where(eq(schema.checklistItems.id, id))
+    const [existing] = await tx
+      .select({ ...getTableColumns(schema.checklistItems) })
+      .from(schema.checklistItems)
+      .innerJoin(schema.tasks, eq(schema.checklistItems.taskId, schema.tasks.id))
+      .where(and(eq(schema.checklistItems.id, id), eq(schema.tasks.userId, userId)))
     if (!existing) throw createError({ statusCode: 404 })
 
     const set: Partial<typeof schema.checklistItems.$inferInsert> = {}

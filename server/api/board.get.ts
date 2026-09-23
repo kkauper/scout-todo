@@ -1,15 +1,25 @@
-import { asc } from 'drizzle-orm'
+import { asc, eq, getTableColumns } from 'drizzle-orm'
 import type { BoardData, ChecklistItem } from '#shared/types/domain'
 
-export default defineEventHandler(async (): Promise<BoardData> => {
+export default defineEventHandler(async (event): Promise<BoardData> => {
+  const userId = await requireUserId(event)
   const db = useDb()
   const [projectRows, tagRows, columnRows, taskRows, taskTagRows, checklistRows] = await Promise.all([
-    db.select().from(schema.projects),
-    db.select().from(schema.tags),
-    db.select().from(schema.boardColumns).orderBy(asc(schema.boardColumns.position)),
-    db.select().from(schema.tasks).orderBy(asc(schema.tasks.columnId), asc(schema.tasks.position)),
-    db.select().from(schema.taskTags),
-    db.select().from(schema.checklistItems).orderBy(asc(schema.checklistItems.taskId), asc(schema.checklistItems.position)),
+    db.select().from(schema.projects).where(eq(schema.projects.userId, userId)),
+    db.select().from(schema.tags).where(eq(schema.tags.userId, userId)),
+    db.select().from(schema.boardColumns).where(eq(schema.boardColumns.userId, userId)).orderBy(asc(schema.boardColumns.position)),
+    db.select().from(schema.tasks).where(eq(schema.tasks.userId, userId)).orderBy(asc(schema.tasks.columnId), asc(schema.tasks.position)),
+    db
+      .select({ taskId: schema.taskTags.taskId, tagId: schema.taskTags.tagId })
+      .from(schema.taskTags)
+      .innerJoin(schema.tasks, eq(schema.taskTags.taskId, schema.tasks.id))
+      .where(eq(schema.tasks.userId, userId)),
+    db
+      .select({ ...getTableColumns(schema.checklistItems) })
+      .from(schema.checklistItems)
+      .innerJoin(schema.tasks, eq(schema.checklistItems.taskId, schema.tasks.id))
+      .where(eq(schema.tasks.userId, userId))
+      .orderBy(asc(schema.checklistItems.taskId), asc(schema.checklistItems.position)),
   ])
 
   const tagsByTask = new Map<string, string[]>()

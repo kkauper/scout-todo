@@ -1,10 +1,12 @@
 import 'dotenv/config'
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import { DEFAULT_COLUMNS } from '../../shared/types/domain'
 import { localDateIso } from '../../shared/utils/dates'
 import * as schema from './schema'
+
+const OWNER_ID = '00000000-0000-4000-8000-000000000001'
 
 const url = process.env.DATABASE_URL
 if (!url) {
@@ -114,28 +116,37 @@ interface PlannedTask {
 }
 
 async function main() {
+  const [ownerRow] = await db.select().from(schema.users).where(eq(schema.users.id, OWNER_ID))
+  const ownerId = ownerRow
+    ? ownerRow.id
+    : (await db.insert(schema.users).values({ id: OWNER_ID, username: 'owner', passwordHash: null }).returning())[0]!.id
+
   const countRows = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(schema.tasks)
+    .where(eq(schema.tasks.userId, ownerId))
   const existingTaskCount = countRows[0]?.count ?? 0
   const reset = process.argv.includes('--reset')
 
   if (existingTaskCount > 0 && !reset) {
-    console.error(`Database already has ${existingTaskCount} task(s). Run "npm run db:seed -- --reset" to wipe and reseed.`)
+    console.error(`Database already has ${existingTaskCount} task(s). Run "pnpm db:seed -- --reset" to wipe and reseed.`)
     await client.end()
     process.exit(1)
   }
 
   if (reset) {
-    await client`TRUNCATE task_state_events, checklist_items, task_tags, tasks, board_columns, tags, projects CASCADE`
+    await db.delete(schema.tasks).where(eq(schema.tasks.userId, ownerId))
+    await db.delete(schema.boardColumns).where(eq(schema.boardColumns.userId, ownerId))
+    await db.delete(schema.tags).where(eq(schema.tags.userId, ownerId))
+    await db.delete(schema.projects).where(eq(schema.projects.userId, ownerId))
   }
 
-  const projectRows = await db.insert(schema.projects).values(PROJECTS).returning()
-  const tagRows = await db.insert(schema.tags).values(TAGS).returning()
+  const projectRows = await db.insert(schema.projects).values(PROJECTS.map(p => ({ ...p, userId: ownerId }))).returning()
+  const tagRows = await db.insert(schema.tags).values(TAGS.map(t => ({ ...t, userId: ownerId }))).returning()
 
   const columnRows = await db
     .insert(schema.boardColumns)
-    .values(DEFAULT_COLUMNS.map((c, i) => ({ name: c.name, kind: c.kind, position: (i + 1) * 1000 })))
+    .values(DEFAULT_COLUMNS.map((c, i) => ({ userId: ownerId, name: c.name, kind: c.kind, position: (i + 1) * 1000 })))
     .returning()
   const columnByName = new Map(columnRows.map(c => [c.name, c]))
   const columnsInOrder = DEFAULT_COLUMNS.map((c) => {
@@ -270,6 +281,7 @@ async function main() {
     const [taskRow] = await db
       .insert(schema.tasks)
       .values({
+        userId: ownerId,
         title: p.title,
         projectId: p.projectId,
         columnId: columnRow.id,
@@ -375,6 +387,7 @@ async function main() {
     `Seeded ${projectRows.length} projects, ${tagRows.length} tags, ${columnRows.length} columns, ${planned.length} tasks, `
     + `${taskTagCount} task-tag links, ${eventCount} state events, ${checklistItemCount} checklist items.`,
   )
+  console.log('Seeded as "owner". Set a password with: pnpm user:passwd owner')
 
   await client.end()
 }

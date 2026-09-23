@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import type { Task } from '#shared/types/domain'
 import { computeKpis } from '#shared/utils/kpi'
@@ -7,14 +8,19 @@ const querySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const query = await getValidatedQuery(event, querySchema.parse)
   const db = useDb()
 
   const [projectRows, columnRows, taskRows, taskTagRows] = await Promise.all([
-    db.select().from(schema.projects),
-    db.select().from(schema.boardColumns),
-    db.select().from(schema.tasks),
-    db.select().from(schema.taskTags),
+    db.select().from(schema.projects).where(eq(schema.projects.userId, userId)),
+    db.select().from(schema.boardColumns).where(eq(schema.boardColumns.userId, userId)),
+    db.select().from(schema.tasks).where(eq(schema.tasks.userId, userId)),
+    db
+      .select({ taskId: schema.taskTags.taskId, tagId: schema.taskTags.tagId })
+      .from(schema.taskTags)
+      .innerJoin(schema.tasks, eq(schema.taskTags.taskId, schema.tasks.id))
+      .where(eq(schema.tasks.userId, userId)),
   ])
 
   const tagsByTask = new Map<string, string[]>()

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { transitionPatch } from '#shared/utils/transitions'
 
@@ -9,19 +9,20 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   const now = new Date()
 
   const result = await db.transaction(async (tx) => {
-    const [row] = await tx.select().from(schema.tasks).where(eq(schema.tasks.id, id)).for('update')
+    const [row] = await tx.select().from(schema.tasks).where(and(eq(schema.tasks.id, id), eq(schema.tasks.userId, userId))).for('update')
     if (!row) return null
 
     const [fromColumn] = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, row.columnId))
     if (!fromColumn) throw createError({ statusCode: 500, statusMessage: 'Task column missing' })
 
-    const [toColumn] = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, body.columnId))
+    const [toColumn] = await tx.select().from(schema.boardColumns).where(and(eq(schema.boardColumns.id, body.columnId), eq(schema.boardColumns.userId, userId)))
     if (!toColumn) throw createError({ statusCode: 400, statusMessage: 'Unknown columnId' })
 
     const patch = transitionPatch(
@@ -72,7 +73,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const task = await loadTaskDto(db, id)
+  const task = await loadTaskDto(db, userId, id)
   if (!task) throw createError({ statusCode: 404 })
   return task
 })

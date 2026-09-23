@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import { COLUMN_KINDS } from '#shared/types/domain'
 
@@ -8,17 +8,19 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
 
   const [maxRow] = await db
     .select({ maxPos: sql<number | null>`max(${schema.boardColumns.position})` })
     .from(schema.boardColumns)
+    .where(eq(schema.boardColumns.userId, userId))
   const position = maxRow?.maxPos != null ? maxRow.maxPos + 1000 : 1000
 
   const [row] = await db
     .insert(schema.boardColumns)
-    .values({ name: body.name, kind: body.kind, position })
+    .values({ userId, name: body.name, kind: body.kind, position })
     .returning()
   if (!row) throw createError({ statusCode: 500, statusMessage: 'Insert failed' })
   return toColumn(row)

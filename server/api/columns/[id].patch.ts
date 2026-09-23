@@ -15,13 +15,14 @@ const bodySchema = z
   })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
   const now = new Date()
 
   const updated = await db.transaction(async (tx) => {
-    const [existing] = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.id, id)).for('update')
+    const [existing] = await tx.select().from(schema.boardColumns).where(and(eq(schema.boardColumns.id, id), eq(schema.boardColumns.userId, userId))).for('update')
     if (!existing) return null
 
     const { kind, ...rest } = body

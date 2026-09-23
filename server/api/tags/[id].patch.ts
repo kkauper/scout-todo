@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { COLOR_KEYS } from '#shared/types/domain'
 
@@ -11,6 +11,7 @@ const bodySchema = z
   .refine(b => b.name !== undefined || b.color !== undefined, { message: 'At least one field required' })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
@@ -18,7 +19,7 @@ export default defineEventHandler(async (event) => {
     const [row] = await db
       .update(schema.tags)
       .set(body)
-      .where(eq(schema.tags.id, id))
+      .where(and(eq(schema.tags.id, id), eq(schema.tags.userId, userId)))
       .returning()
     if (!row) throw createError({ statusCode: 404 })
     return toTag(row)

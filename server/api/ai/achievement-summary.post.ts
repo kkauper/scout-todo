@@ -14,6 +14,7 @@ function round1(x: number): number {
 }
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
 
@@ -23,7 +24,7 @@ export default defineEventHandler(async (event) => {
   const doneColumnRows = await db
     .select({ id: schema.boardColumns.id })
     .from(schema.boardColumns)
-    .where(eq(schema.boardColumns.kind, 'done'))
+    .where(and(eq(schema.boardColumns.kind, 'done'), eq(schema.boardColumns.userId, userId)))
   const doneColumnIds = doneColumnRows.map(c => c.id)
 
   if (doneColumnIds.length === 0) {
@@ -34,6 +35,7 @@ export default defineEventHandler(async (event) => {
     inArray(schema.tasks.columnId, doneColumnIds),
     gte(schema.tasks.completedAt, rangeStart),
     lte(schema.tasks.completedAt, rangeEnd),
+    eq(schema.tasks.userId, userId),
   ]
   if (body.projectId === 'none') conditions.push(isNull(schema.tasks.projectId))
   else if (body.projectId !== undefined) conditions.push(eq(schema.tasks.projectId, body.projectId))
@@ -52,7 +54,7 @@ export default defineEventHandler(async (event) => {
   const taskIds = taskRows.map(t => t.id)
 
   const [projectRows, tagRows] = await Promise.all([
-    db.select().from(schema.projects),
+    db.select().from(schema.projects).where(eq(schema.projects.userId, userId)),
     db
       .select({ taskId: schema.taskTags.taskId, tagName: schema.tags.name })
       .from(schema.taskTags)

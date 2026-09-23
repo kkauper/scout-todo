@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 
 const paramsSchema = z.object({ id: z.uuid() })
@@ -11,6 +11,7 @@ const bodySchema = z.object({
 })
 
 export default defineEventHandler(async (event) => {
+  const userId = await requireUserId(event)
   const { id } = await getValidatedRouterParams(event, paramsSchema.parse)
   const body = await readValidatedBody(event, bodySchema.parse)
   const db = useDb()
@@ -18,10 +19,12 @@ export default defineEventHandler(async (event) => {
 
   try {
     const updated = await db.transaction(async (tx) => {
+      await assertOwnedRefs(tx, userId, { projectId: taskFields.projectId, tagIds }, 'Unknown project or tag')
+
       const [row] = await tx
         .update(schema.tasks)
         .set({ ...taskFields, updatedAt: new Date() })
-        .where(eq(schema.tasks.id, id))
+        .where(and(eq(schema.tasks.id, id), eq(schema.tasks.userId, userId)))
         .returning()
       if (!row) return false
 
@@ -35,7 +38,7 @@ export default defineEventHandler(async (event) => {
     })
 
     if (!updated) throw createError({ statusCode: 404 })
-    const task = await loadTaskDto(db, id)
+    const task = await loadTaskDto(db, userId, id)
     if (!task) throw createError({ statusCode: 404 })
     return task
   }

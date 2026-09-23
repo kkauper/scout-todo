@@ -14,8 +14,15 @@
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx server/db/seed.ts",
     "db:studio": "drizzle-kit studio",
+    "user:add": "tsx scripts/user.ts add",
+    "user:passwd": "tsx scripts/user.ts passwd",
+    "build:cf": "NITRO_PRESET=cloudflare_module nuxt build",
+    "preview:cf": "pnpm run build:cf && wrangler dev",
+    "deploy": "pnpm run build:cf && wrangler deploy",
+    "cf:types": "wrangler types",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:isolation": "vitest run --config vitest.integration.config.ts",
     "typecheck": "nuxi typecheck"
   },
   "dependencies": {
@@ -30,6 +37,7 @@
     "drizzle-orm": "^0.45.3",
     "esbuild": ">=0.25.0",
     "nuxt": "^4.5.2",
+    "nuxt-auth-utils": "^0.5.30",
     "pinia": "^4.0.3",
     "postgres": "^3.4.9",
     "reka-ui": "^2.10.5",
@@ -53,7 +61,8 @@
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1",
-    "vue-tsc": "^3.3.11"
+    "vue-tsc": "^3.3.11",
+    "wrangler": "^4.136.2"
   },
   "packageManager": "pnpm@12.3.4"
 }

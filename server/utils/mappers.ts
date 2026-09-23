@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm'
+import { and, asc, eq } from 'drizzle-orm'
 import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task } from '#shared/types/domain'
 import * as schema from '../db/schema'
 import type { useDb } from './db'
@@ -70,8 +70,8 @@ export function toTask(row: TaskRow, tagIds: string[], checklist: ChecklistItem[
   }
 }
 
-export async function loadTaskDto(db: ReturnType<typeof useDb>, id: string): Promise<Task | null> {
-  const row = await db.query.tasks.findFirst({ where: eq(schema.tasks.id, id) })
+export async function loadTaskDto(db: ReturnType<typeof useDb>, userId: string, id: string): Promise<Task | null> {
+  const row = await db.query.tasks.findFirst({ where: and(eq(schema.tasks.id, id), eq(schema.tasks.userId, userId)) })
   if (!row) return null
   const [tagRows, checklistRows] = await Promise.all([
     db
