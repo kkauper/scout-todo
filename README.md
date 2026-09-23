@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  A local-first Kanban board that turns your daily work into evidence for performance and salary conversations.
+  A personal Kanban board that turns your daily work into evidence for performance and salary conversations.
 </p>
 
 <div align="center">
@@ -16,12 +16,16 @@
   <img alt="PostgreSQL 17" src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" />
   <img alt="Drizzle ORM" src="https://img.shields.io/badge/Drizzle-ORM-C5F74F?logo=drizzle&logoColor=black" />
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind-CSS-06B6D4?logo=tailwindcss&logoColor=white" />
+  <img alt="Cloudflare Workers" src="https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white" />
+  <img alt="Claude" src="https://img.shields.io/badge/Claude-API-D97757?logo=anthropic&logoColor=white" />
   <img alt="Ollama" src="https://img.shields.io/badge/Ollama-Local%20AI-8B5CF6?logo=ollama&logoColor=white" />
 </div>
 
 ---
 
-Scout is a local-first personal Kanban board built to make work visible, measurable, and easier to explain in real conversations. It keeps your tasks in one place, gives you clear state transitions, and turns activity into evidence you can use for planning, reviews, and salary or manager discussions.
+Scout is a personal Kanban board built to make work visible, measurable, and easier to explain in real conversations. It keeps your tasks in one place, gives you clear state transitions, and turns activity into evidence you can use for planning, reviews, and salary or manager discussions.
+
+Run it on your laptop with Docker, or self-host it on Cloudflare Workers with a managed Postgres database and use it from any device.
 
 <p align="center">
   <picture>
@@ -41,13 +45,13 @@ Scout is a local-first personal Kanban board built to make work visible, measura
 
 ## Why Scout
 
-This project started from a simple need: keep a board that feels lightweight, but still gives you hard numbers behind the work. It is designed for a single owner, not a team, so the focus is on clarity, speed, and reliable local data.
+This project started from a simple need: keep a board that feels lightweight, but still gives you hard numbers behind the work. It is built for individuals, not teams. Every account gets its own private board, and nothing is shared between accounts.
 
-The app combines a drag-and-drop task board with KPI summaries that show work in progress, throughput, cycle time, aging, and overdue items. There is also optional local AI support through Ollama for title suggestions, descriptions, achievement summaries, and subtask ideas.
+The app combines a drag-and-drop task board with KPI summaries that show work in progress, throughput, cycle time, aging, and overdue items. Optional AI support drafts titles, descriptions, sub-todos, and achievement summaries, using either your own Claude API key or a local model through Ollama.
 
-- **Track work where it happens**: drag-and-drop board with custom columns, quick add, inline editing. No friction between work and tracking.
+- **Track work where it happens**: drag-and-drop board with custom columns, quick add, inline editing, and a side panel for details. No friction between work and tracking.
 - **KPIs for manager talks**: throughput, cycle time, WIP, aging, overdue items, and AI-drafted achievement summaries. Copy to Markdown for performance reviews or salary discussions.
-- **Everything stays on your machine**: PostgreSQL in Docker, optional local LLM via Ollama. No cloud, no sharing, no third-party API keys for the core app.
+- **Your data, your infrastructure**: run everything locally, or self-host on your own Cloudflare account and database. No shared service, no tracking, and AI only runs with your own key or your own local model.
 
 ## Features
 
@@ -56,9 +60,9 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 - Drag-and-drop task reordering within and across columns.
 - Inline editing of task title, project, and tags directly on the card.
 - Projects shown as filled badges with a folder icon; tags as outline pills.
-- Sub-todo checkboxes (tickable on card; full checklist in task details).
-- Task details dialog with Details and History tabs.
-- Column state transitions tracked in history.
+- Sub-todo checkboxes (tickable on card; full checklist in the task panel).
+- Task side panel next to the board: every field saves automatically, and you can click through cards without closing it. Includes the task's activity history (column moves with timestamps). Full-screen on phones.
+- New tasks are created in a short dialog.
 
 **KPIs**
 - **WIP**: tasks in columns of kind Active.
@@ -73,16 +77,24 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 - **Project distribution**: task counts per project by column kind (Open / Active / Done).
 - Filter by project; copy Markdown summary for presentations.
 
-**Local AI** (optional)
+**AI** (optional)
 - Improve task title: rewrite for clarity.
 - Draft description: expand a quick idea into full context.
 - Suggest sub-todos: break down a task into steps.
 - Achievement summary: turn completed tasks into manager-ready bullet points.
-- Disabled when Ollama is not running; no external calls.
+- **Claude**: add your own Anthropic API key in Account → AI settings. The key is checked with Anthropic before saving, stored encrypted on the server, and never sent back to the browser. Requests run server-side on `claude-opus-5`.
+- **Ollama**: without a Claude key, AI features use a local Ollama model if one is running. In the Cloudflare deployment only Claude is available.
+
+**Accounts and security**
+- Username and password sign-in with encrypted, httpOnly session cookies. There is no public sign-up; accounts are created from the command line.
+- Each account's projects, tags, columns, and tasks are private and checked on every request.
+- Users can change their own password from the account menu, which signs out their other devices.
+- In the Cloudflare deployment, logins are rate-limited, responses send strict security headers (CSP, HSTS, frame protection), and the app connects to the database through a least-privilege role.
 
 **Design**
-- Light, dark, and system theme toggle in header.
-- Keyboard accessible: cards are focusable, Enter opens details, card menu offers Move to…, column menu offers Move left/right.
+- Light, dark, and system theme (account menu).
+- Header fits phone screens down to 360px.
+- Keyboard accessible: cards are focusable, Enter opens the task panel, Esc closes it, card menu offers Move to…, column menu offers Move left/right.
 - Responsive layout: columns grow to fill free width (min 18rem, max 32rem).
 - Brand palette with accessible color contrast; color never sole carrier of meaning.
 
@@ -90,25 +102,21 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 
 - Node 24+
 - pnpm
-- Docker Desktop
+- Docker Desktop (local database)
 
-## Quick start
+## Quick start (local)
 
 ```bash
 cp .env.example .env
+# set NUXT_SESSION_PASSWORD and NUXT_ENCRYPTION_KEY in .env: openssl rand -base64 32
 pnpm install
 pnpm run db:up
 pnpm run db:migrate
-pnpm run db:seed       # sample data; refuses if tasks exist
-pnpm run user:add <name>   # create your account; also set NUXT_SESSION_PASSWORD in .env
-pnpm run dev           # http://localhost:3000
+pnpm run user:add <name>   # create your account (prompts for a password)
+pnpm run dev               # http://localhost:3000
 ```
 
-If you're upgrading from a single-account setup, existing data belongs to a placeholder account named `owner`. Set its password with `pnpm run user:passwd owner`.
-
-If you want a clean reset, run `pnpm run db:seed -- --reset`. This wipes and reseeds the database and is destructive.
-
-**Deploy to Cloudflare**: see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Optional sample data: `pnpm run db:seed` fills a placeholder account named `owner`. Set its password with `pnpm run user:passwd owner` to sign in and look around. `pnpm run db:seed -- --reset` wipes and reseeds that account and is destructive.
 
 **Optional: local AI**
 ```bash
@@ -117,23 +125,39 @@ ollama pull qwen3:8b   # model configurable via OLLAMA_MODEL in .env
 
 Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local Postgres on 5432.
 
+## Deploy to Cloudflare
+
+Scout runs on Cloudflare Workers with static assets, talks to a Postgres database (for example Supabase) through Hyperdrive, and can be served on your own domain. Accounts are managed with the same `user:add` / `user:passwd` scripts, pointed at the production database.
+
+Setup, secrets, database role, and upgrade steps: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). After that, a release is:
+
+```bash
+pnpm run deploy
+```
+
+Apply new migrations to the production database before deploying code that depends on them.
+
 ## Scripts
 
 | Script | Purpose |
 |---|---|
-| `pnpm run build` | Build for production |
 | `pnpm run dev` | Start the app at http://localhost:3000 |
+| `pnpm run build` | Build for Node (local production build) |
+| `pnpm run preview` | Preview the Node production build |
+| `pnpm run build:cf` | Build for Cloudflare Workers |
+| `pnpm run preview:cf` | Build for Workers and run it locally with `wrangler dev` |
+| `pnpm run deploy` | Build for Workers and deploy with `wrangler deploy` |
+| `pnpm run cf:types` | Generate Worker binding types |
 | `pnpm run generate` | Generate a static site |
-| `pnpm run preview` | Preview the production build |
 | `pnpm run postinstall` | Prepare Nuxt after install |
 | `pnpm run db:up` | Start the PostgreSQL Docker container |
 | `pnpm run db:down` | Stop the PostgreSQL Docker container |
 | `pnpm run db:generate` | Generate Drizzle migrations from the schema |
-| `pnpm run db:migrate` | Apply pending Drizzle migrations |
-| `pnpm run db:seed` | Fill the database with sample data |
+| `pnpm run db:migrate` | Apply pending Drizzle migrations (uses `DATABASE_URL`) |
+| `pnpm run db:seed` | Fill the `owner` account with sample data |
 | `pnpm run db:studio` | Open Drizzle Studio |
 | `pnpm run user:add` | Create a new account (prompts for a password) |
-| `pnpm run user:passwd` | Set/reset an account's password |
+| `pnpm run user:passwd` | Set or reset an account's password |
 | `pnpm run test` | Run the unit tests once |
 | `pnpm run test:watch` | Run tests in watch mode |
 | `pnpm run test:isolation` | Run the multi-user data isolation integration test |
@@ -143,15 +167,13 @@ Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local P
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgres://scout:scout@localhost:5433/scout` | PostgreSQL connection string |
-| `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API endpoint (optional) |
-| `OLLAMA_MODEL` | `qwen3:8b` | LLM model to use (optional; configure via Ollama) |
-| `NUXT_SESSION_PASSWORD` | — | Session cookie encryption key, min 32 chars: `openssl rand -base64 32` (required) |
-| `NUXT_ENCRYPTION_KEY` | — | Encrypts per-user Claude API keys, min 32 chars: `openssl rand -base64 32` (required for AI settings) |
+| `DATABASE_URL` | `postgres://scout:scout@localhost:5433/scout` | PostgreSQL connection string (local dev, migrations, user scripts) |
+| `NUXT_SESSION_PASSWORD` | — | Session cookie encryption key, min 32 chars (required) |
+| `NUXT_ENCRYPTION_KEY` | — | Encrypts per-user Claude API keys, min 32 chars (required for AI settings) |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API endpoint; an empty value turns local AI off |
+| `OLLAMA_MODEL` | `qwen3:8b` | Local model to use |
 
-## AI
-
-AI features (improve title, draft description, suggest sub-todos, achievement summary) use Claude if you add your own Anthropic API key in Account → AI settings; otherwise they fall back to local Ollama.
+Generate keys with `openssl rand -base64 32`. In the Cloudflare deployment the two `NUXT_*` keys are Worker secrets, and the database connection comes from the Hyperdrive binding in `wrangler.jsonc`.
 
 ## Tech stack
 
@@ -161,34 +183,45 @@ AI features (improve title, draft description, suggest sub-todos, achievement su
 - **State**: Pinia with a setup-store approach
 - **Drag and drop**: `vue-draggable-plus` based on SortableJS
 - **ORM**: Drizzle ORM 0.45 with drizzle-kit
-- **Database**: PostgreSQL 17 in Docker on port 5433
+- **Database**: PostgreSQL 17 (Docker on port 5433 locally; Supabase via Hyperdrive in production)
+- **Auth**: `nuxt-auth-utils` sealed cookie sessions, PBKDF2 password hashes (WebCrypto)
+- **Hosting**: Cloudflare Workers + Static Assets (Nitro preset `cloudflare_module`), Workers Rate Limiting for logins
+- **AI**: Anthropic TypeScript SDK (`claude-opus-5`) with per-user keys, or Ollama locally
 - **Validation**: `zod` plus h3 validation helpers
 - **Tests**: Vitest 5 in a Node environment
 - **Fonts**: `@fontsource-variable/geist` (bundled; no external requests)
-- **Local AI**: Ollama endpoints with optional model-based suggestions
 
 ## Project structure
 
 ```text
 app/
-  pages/index.vue            Main screen
+  pages/index.vue            Board screen
+  pages/login.vue            Sign-in
+  middleware/auth.global.ts  Redirects signed-out users to /login
   assets/css/tailwind.css    Token and design system styles
   components/ui/**           shadcn-vue generated pieces
-  components/board/*.vue     Board and card interactions
-  components/task/*.vue      Task forms and pickers
+  components/board/*.vue     Board, columns, and cards
+  components/task/*.vue      Task panel, create dialog, pickers
   components/kpi/*.vue       KPI panels and summaries
-  components/common/*.vue    Shared UI helpers and badges
+  components/common/*.vue    Account menu, AI settings, badges
+  composables/               Task panel, AI, KPIs
   stores/board.ts            Pinia store for board state
-  lib/utils.ts               shadcn `cn()` helper
 shared/
-  types/domain.ts            Domain types, states, colors, DTOs
+  types/                     Domain types, DTOs, session type
   utils/                     Transitions, positions, dates, KPI logic
 server/
+  api/**                     API routes (auth, board, tasks, columns, AI, settings)
+  middleware/auth.ts         Rejects /api requests without a valid session
+  utils/                     DB access, ownership checks, passwords, AI providers, key encryption
+  plugins/                   Session guard, per-request DB cleanup
   db/schema.ts               Drizzle schema
   db/migrations/             Drizzle output
   db/seed.ts                 Sample data setup
-  api/**                     API routes
-tests/unit/                  Vitest test coverage
+scripts/
+  user.ts                    Account admin (user:add, user:passwd)
+  sql/app-role.sql           Least-privilege database role for production
+tests/                       Unit and integration tests
+wrangler.jsonc               Cloudflare Worker config
 ```
 
 ## Development notes
@@ -198,6 +231,8 @@ tests/unit/                  Vitest test coverage
 **Theming**: See [docs/THEMING.md](docs/THEMING.md) for customizing colors, spacing, and brand palette. Token definitions live in `app/assets/css/tailwind.css`.
 
 **Architecture**: See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, domain model, API spec, and component hierarchy.
+
+**Deployment**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 **Workflow**: Claude Code agents and automation live in `CLAUDE.md` and `.claude/agents/`.
 
