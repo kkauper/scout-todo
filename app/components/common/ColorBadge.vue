@@ -8,7 +8,7 @@ defineProps<{
 </script>
 
 <template>
-  <Badge variant="outline" class="gap-1.5 font-normal">
+  <Badge variant="outline" class="gap-1.5 rounded-full font-normal">
     <span
       class="size-2 rounded-full"
       :style="{ background: color ? `var(--swatch-${color})` : 'var(--muted-foreground)' }"

@@ -18,6 +18,9 @@ watchEffect(() => {
   items.value = [...store.tasksByColumn(props.column.id)]
 })
 
+const inlineEditing = useState('inlineEditing', () => false)
+const wasEditing = ref(false)
+
 function onEnd(evt: SortableEvent) {
   const id = (evt.item as HTMLElement).dataset.taskId
   const to = (evt.to as HTMLElement).dataset.columnId
@@ -26,6 +29,7 @@ function onEnd(evt: SortableEvent) {
 }
 
 function onCardClick(e: MouseEvent, taskId: string) {
+  if (wasEditing.value) return
   const target = e.target as HTMLElement
   if (target.closest('button, a, input, textarea, select, [role="checkbox"], [role="menuitem"], [data-no-open]')) return
   openEdit(taskId)
@@ -40,11 +44,14 @@ const draftName = ref('')
 function startRename() {
   draftName.value = props.column.name
   renaming.value = true
+  inlineEditing.value = true
 }
 
 function commitRename() {
+  if (!renaming.value) return
   const trimmed = draftName.value.trim()
   renaming.value = false
+  inlineEditing.value = false
   if (trimmed && trimmed !== props.column.name) {
     store.updateColumn(props.column.id, { name: trimmed })
   }
@@ -52,6 +59,7 @@ function commitRename() {
 
 function cancelRename() {
   renaming.value = false
+  inlineEditing.value = false
 }
 
 const isFirstVisible = computed(() => store.visibleColumns[0]?.id === props.column.id)
@@ -81,7 +89,7 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <section :aria-labelledby="`col-${column.id}`" class="flex h-full min-h-0 w-72 shrink-0 flex-col rounded-xl bg-muted/50">
+  <section :aria-labelledby="`col-${column.id}`" class="flex h-full min-h-0 min-w-72 max-w-[32rem] flex-[1_1_18rem] flex-col rounded-xl bg-muted/50">
     <div class="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
       <TooltipProvider>
         <Tooltip>
@@ -100,7 +108,7 @@ async function confirmDelete() {
         v-model="draftName"
         autofocus
         data-no-drag
-        class="h-7 text-sm"
+        class="h-7 bg-transparent dark:bg-transparent shadow-none px-1.5 text-sm font-medium"
         @click.stop
         @keydown.enter.stop="commitRename"
         @keydown.escape.stop="cancelRename"
@@ -167,6 +175,7 @@ async function confirmDelete() {
         :data-task-id="t.id"
         :aria-label="`${t.title}, ${column.name}`"
         class="group/card list-none shrink-0 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        @pointerdown.capture="wasEditing = inlineEditing"
         @click="onCardClick($event, t.id)"
         @keydown.enter.self.prevent="openEdit(t.id)"
       >

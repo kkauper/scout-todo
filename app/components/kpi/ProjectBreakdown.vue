@@ -40,7 +40,7 @@ function selectProject(projectId: string | null): void {
       @click="selectProject(row.projectId)"
     >
       <div class="flex items-center justify-between gap-2">
-        <ColorBadge :label="row.name" :color="row.color" />
+        <ProjectBadge :label="row.name" :color="row.color" />
         <span class="text-xs tabular-nums text-muted-foreground">{{ row.total }}</span>
       </div>
       <div

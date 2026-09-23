@@ -210,7 +210,10 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 | UI pattern | Component(s) |
 |---|---|
 | Task card | `Card`, `CardHeader`, `CardTitle`, `CardContent` |
-| Project label, tag chips | `Badge variant="outline"` wrapped in `common/ColorBadge` (color dot via `--swatch-*`) |
+| Project label | `common/ProjectBadge` — filled rounded rectangle (swatch tint via `color-mix`), `Folder` icon, no dot |
+| Tag chips | `common/ColorBadge` — outline pill (`rounded-full`) with color dot via `--swatch-*` |
+| Theme switch | `common/ColorModeToggle` (`useColorMode` → `store` ref: light / dark / auto) |
+| Edit dialog sections | `Tabs`: Details / History (n); create mode has no tabs |
 | Column count | `Badge variant="secondary"` |
 | Column kind indicator | `Circle`/`CircleDot`/`CircleCheck` (lucide) + `Tooltip`, `aria-label` = kind label |
 | Column actions (rename, type, move, hide, delete) | `DropdownMenu` + `DropdownMenuSub` › `DropdownMenuRadioGroup` for "Type" |
@@ -228,6 +231,10 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 ### Card click behavior
 
 The task `<li>` has a single `click` handler (`BoardColumn.vue`'s `onCardClick`): it opens the edit dialog unless `event.target` is inside an interactive element — `closest('button, a, input, textarea, select, [role="checkbox"], [role="menuitem"], [data-no-open]')` — in which case it returns early and lets that element's own handler run (project/tag pickers, the rename button, the actions menu, checklist controls). `dblclick` is not used any more; dragging still starts on pointer movement (SortableJS) independent of the click handler. `CardChecklist`'s root carries `data-no-open` so any click inside the sub-todo list (toggle, add-row) never opens the dialog. Keyboard: the `<li>` is focusable and `Enter` opens the edit dialog via `@keydown.enter.self.prevent`.
+
+Inline edits (card title, column rename) set `useState('inlineEditing')`. Each `<li>` records that flag on `pointerdown` (capture); if an inline edit was active, the following click only ends the edit (blur → save) and never opens a dialog. Inline inputs: Enter/`Check` button = save, Escape/`X` button = cancel (commit functions guard against the blur that fires when the input unmounts).
+
+Columns are fluid: `min-w-72 max-w-[32rem] flex-[1_1_18rem]` — they share free width, never shrink below 18rem (board scrolls horizontally instead).
 
 Card title is plain text (not a button); renaming happens via a small ghost `Pencil` icon button (visible on card hover/focus-within) that switches to an inline `Input`. The project/tag "add" affordances are hover-only chips positioned *after* the real badges (via flex `order-*` utilities) using `hidden …:inline-flex` rather than `opacity-0`, so an empty state doesn't reserve visual space before the badges.
 

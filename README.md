@@ -1,10 +1,14 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="public/scout-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="public/scout-light.png">
-  <img alt="Scout Logo" src="public/scout-light.png" width="1200">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="public/scout-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="public/scout-light.png">
+    <img alt="Scout" src="public/scout-light.png" width="420">
+  </picture>
+</p>
 
----
+<p align="center">
+  A local-first Kanban board that turns your daily work into evidence for performance and salary conversations.
+</p>
 
 <div align="left">
   <img alt="Nuxt 4" src="https://img.shields.io/badge/Nuxt-4-00DC82?logo=nuxt&logoColor=white" />
@@ -19,11 +23,68 @@
 
 Scout is a local-first personal Kanban board built to make work visible, measurable, and easier to explain in real conversations. It keeps your tasks in one place, gives you clear state transitions, and turns activity into evidence you can use for planning, reviews, and salary or manager discussions.
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/board-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/board-light.png">
+    <img alt="Scout board view" src="docs/screenshots/board-light.png" width="100%">
+  </picture>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/kpis-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/screenshots/kpis-light.png">
+    <img alt="Scout KPI drawer" src="docs/screenshots/kpis-light.png" width="100%">
+  </picture>
+</p>
+
 ## Why Scout
 
 This project started from a simple need: keep a board that feels lightweight, but still gives you hard numbers behind the work. It is designed for a single owner, not a team, so the focus is on clarity, speed, and reliable local data.
 
 The app combines a drag-and-drop task board with KPI summaries that show work in progress, throughput, cycle time, aging, and overdue items. There is also optional local AI support through Ollama for title suggestions, descriptions, achievement summaries, and subtask ideas.
+
+- **Track work where it happens**: drag-and-drop board with custom columns, quick add, inline editing. No friction between work and tracking.
+- **KPIs for manager talks**: throughput, cycle time, WIP, aging, overdue items, and AI-drafted achievement summaries. Copy to Markdown for performance reviews or salary discussions.
+- **Everything stays on your machine**: PostgreSQL in Docker, optional local LLM via Ollama. No cloud, no sharing, no third-party API keys for the core app.
+
+## Features
+
+**Board**
+- Custom columns: add, rename, change kind (Open/Active/Done), reorder, hide, delete (tasks are moved to a column you choose).
+- Drag-and-drop task reordering within and across columns.
+- Inline editing of task title, project, and tags directly on the card.
+- Projects shown as filled badges with a folder icon; tags as outline pills.
+- Sub-todo checkboxes (tickable on card; full checklist in task details).
+- Task details dialog with Details and History tabs.
+- Column state transitions tracked in history.
+
+**KPIs**
+- **WIP**: tasks in columns of kind Active.
+- **Throughput (weekly)**: completed tasks per week (weeks start Monday, last 8 weeks).
+- **Throughput (last 30 days)**: work completed in the last 30 days.
+- **Throughput (this month)**: work completed since the start of the current month.
+- **Cycle time (avg)**: average time from creation to completion.
+- **Cycle time (median)**: median time from creation to completion.
+- **Aging (WIP avg)**: average days Active tasks have spent in their current column.
+- **Oldest open items**: top 5 non-done tasks by days in their current column.
+- **Overdue**: tasks past deadline, excluding done items.
+- **Project distribution**: task counts per project by column kind (Open / Active / Done).
+- Filter by project; copy Markdown summary for presentations.
+
+**Local AI** (optional)
+- Improve task title: rewrite for clarity.
+- Draft description: expand a quick idea into full context.
+- Suggest sub-todos: break down a task into steps.
+- Achievement summary: turn completed tasks into manager-ready bullet points.
+- Disabled when Ollama is not running; no external calls.
+
+**Design**
+- Light, dark, and system theme toggle in header.
+- Keyboard accessible: cards are focusable, Enter opens details, card menu offers Move to…, column menu offers Move left/right.
+- Responsive layout: columns grow to fill free width (min 18rem, max 32rem).
+- Brand palette with accessible color contrast; color never sole carrier of meaning.
 
 ## Requirements
 
@@ -31,37 +92,52 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 - pnpm
 - Docker Desktop
 
-## Setup
+## Quick start
 
 ```bash
 cp .env.example .env
 pnpm install
-pnpm db:up
-pnpm db:migrate
-pnpm db:seed          # sample data; refuses if tasks exist
-pnpm dev              # http://localhost:3000
+pnpm run db:up
+pnpm run db:migrate
+pnpm run db:seed       # sample data; refuses if tasks exist
+pnpm run dev           # http://localhost:3000
 ```
 
-If you want a clean reset, run `pnpm db:seed -- --reset`. This wipes and reseeds the database and is destructive.
+If you want a clean reset, run `pnpm run db:seed -- --reset`. This wipes and reseeds the database and is destructive.
+
+**Optional: local AI**
+```bash
+ollama pull qwen3:8b   # model configurable via OLLAMA_MODEL in .env
+```
+
+Note: PostgreSQL is exposed on host port 5433 so it doesn't clash with a local Postgres on 5432.
 
 ## Scripts
 
 | Script | Purpose |
 |---|---|
-| `pnpm build` | Build for production |
-| `pnpm dev` | Start the app at http://localhost:3000 |
-| `pnpm generate` | Generate a static site |
-| `pnpm preview` | Preview the production build |
-| `pnpm postinstall` | Prepare Nuxt after install |
-| `pnpm db:up` | Start the PostgreSQL Docker container |
-| `pnpm db:down` | Stop the PostgreSQL Docker container |
-| `pnpm db:generate` | Generate Drizzle migrations from the schema |
-| `pnpm db:migrate` | Apply pending Drizzle migrations |
-| `pnpm db:seed` | Fill the database with sample data |
-| `pnpm db:studio` | Open Drizzle Studio |
-| `pnpm test` | Run the unit tests once |
-| `pnpm test:watch` | Run tests in watch mode |
-| `pnpm typecheck` | Check the TypeScript types |
+| `pnpm run build` | Build for production |
+| `pnpm run dev` | Start the app at http://localhost:3000 |
+| `pnpm run generate` | Generate a static site |
+| `pnpm run preview` | Preview the production build |
+| `pnpm run postinstall` | Prepare Nuxt after install |
+| `pnpm run db:up` | Start the PostgreSQL Docker container |
+| `pnpm run db:down` | Stop the PostgreSQL Docker container |
+| `pnpm run db:generate` | Generate Drizzle migrations from the schema |
+| `pnpm run db:migrate` | Apply pending Drizzle migrations |
+| `pnpm run db:seed` | Fill the database with sample data |
+| `pnpm run db:studio` | Open Drizzle Studio |
+| `pnpm run test` | Run the unit tests once |
+| `pnpm run test:watch` | Run tests in watch mode |
+| `pnpm run typecheck` | Check the TypeScript types |
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DATABASE_URL` | `postgres://scout:scout@localhost:5433/scout` | PostgreSQL connection string |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Ollama API endpoint (optional) |
+| `OLLAMA_MODEL` | `qwen3:8b` | LLM model to use (optional; configure via Ollama) |
 
 ## Tech stack
 
@@ -70,14 +146,14 @@ If you want a clean reset, run `pnpm db:seed -- --reset`. This wipes and reseeds
 - **Styling**: Tailwind CSS v4 with CSS variable tokens
 - **State**: Pinia with a setup-store approach
 - **Drag and drop**: `vue-draggable-plus` based on SortableJS
-- **ORM**: Drizzle ORM 0.45 with drizzle-kit and `postgres` for the PostgreSQL driver
+- **ORM**: Drizzle ORM 0.45 with drizzle-kit
+- **Database**: PostgreSQL 17 in Docker on port 5433
 - **Validation**: `zod` plus h3 validation helpers
-- **Database**: PostgreSQL 17 in Docker on port 5432
 - **Tests**: Vitest 5 in a Node environment
-- **Fonts**: `@fontsource-variable/geist`
-- **Local AI**: Ollama endpoints with optional model-based suggestions and summaries
+- **Fonts**: `@fontsource-variable/geist` (bundled; no external requests)
+- **Local AI**: Ollama endpoints with optional model-based suggestions
 
-## Project layout
+## Project structure
 
 ```text
 app/
@@ -101,34 +177,16 @@ server/
 tests/unit/                  Vitest test coverage
 ```
 
-## KPI evidence
+## Development notes
 
-The KPI panel shows the health of your work across the board. It includes:
+**TypeScript version**: `typescript` is pinned to `^6.0.3`. TypeScript 7 currently breaks `vue-tsc` as of September 2026, so avoid upgrading without testing.
 
-- **WIP**: tasks in progress or review
-- **Throughput (weekly)**: completed tasks by ISO week
-- **Throughput (last 30 days)**: work completed in the last 30 days
-- **Throughput (this month)**: work completed since the start of the current month
-- **Cycle time (avg)**: average time from creation to completion
-- **Cycle time (median)**: median time from creation to completion
-- **Aging (WIP avg)**: average age of items still in progress
-- **Overdue**: tasks past deadline, excluding done items
-- **Project distribution**: counts by state, grouped by project
+**Theming**: See [docs/THEMING.md](docs/THEMING.md) for customizing colors, spacing, and brand palette. Token definitions live in `app/assets/css/tailwind.css`.
 
-Use the Copy summary action in the KPI panel to export the metrics as Markdown.
+**Architecture**: See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system design, domain model, API spec, and component hierarchy.
 
-## Database changes
+**Workflow**: Claude Code agents and automation live in `CLAUDE.md` and `.claude/agents/`.
 
-To update the schema:
+## License
 
-1. Edit `server/db/schema.ts`
-2. Run `pnpm db:generate`
-3. Run `pnpm db:migrate`
-
-## Toolchain note
-
-`typescript` is pinned to `^6.0.3`. TypeScript 7 currently breaks `vue-tsc` as of September 2026, so avoid upgrading without testing.
-
-## Agents
-
-The Claude Code workflow lives in `CLAUDE.md` and `.claude/agents/`.
+MIT © 2026 Kai Kauper — see [LICENSE](LICENSE).

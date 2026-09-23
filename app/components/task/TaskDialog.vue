@@ -32,6 +32,7 @@ const description = computed<string>({
 
 const moreOpen = ref(false)
 const events = ref<StateEvent[]>([])
+const activeTab = ref<'details' | 'history'>('details')
 
 const currentTask = computed(() => (dialog.value.taskId ? store.tasks.find((t) => t.id === dialog.value.taskId) ?? null : null))
 const showMore = computed(() => dialog.value.mode === 'edit' || moreOpen.value)
@@ -58,6 +59,7 @@ watch(() => dialog.value.open, (isOpen) => {
   moreOpen.value = false
   events.value = []
   draftChecklist.value = []
+  activeTab.value = 'details'
 
   if (dialog.value.mode === 'edit') {
     const task = currentTask.value
@@ -127,68 +129,52 @@ async function save() {
 
 <template>
   <Dialog v-model:open="dialog.open">
-    <DialogContent>
+    <DialogContent class="max-h-[85vh] flex flex-col">
       <DialogHeader>
         <DialogTitle>{{ dialog.mode === 'create' ? 'New task' : 'Edit task' }}</DialogTitle>
         <DialogDescription class="sr-only">
           {{ dialog.mode === 'create' ? 'Create a new task' : 'Update the task details' }}
         </DialogDescription>
       </DialogHeader>
-      <form class="space-y-4" @submit.prevent="save">
-        <div class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <Label for="task-title">Title</Label>
-            <AiTitleSuggestions :title="form.title" :description="form.description" :project-name="projectName" @pick="(t) => (form.title = t)" />
-          </div>
-          <Input id="task-title" v-model="form.title" required autofocus maxlength="200" />
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <ProjectPicker v-model="form.projectId" />
-          <DeadlinePicker v-if="showMore" v-model="form.deadline" />
-          <Select v-if="dialog.mode === 'create'" v-model="form.columnId as string">
-            <SelectTrigger class="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="c in store.visibleColumns" :key="c.id" :value="c.id">
-                {{ c.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <TagPicker v-if="showMore" v-model="form.tagIds" />
-        <Button
-          v-if="dialog.mode === 'create'"
-          type="button"
-          variant="ghost"
-          size="sm"
-          :aria-expanded="moreOpen"
-          @click="moreOpen = !moreOpen"
-        >
-          More details
-        </Button>
-        <div v-if="showMore" class="space-y-1.5">
-          <div class="flex items-center justify-between">
-            <Label for="task-description">Description</Label>
-            <AiDescriptionButton :title="form.title" :project-name="projectName" :tags="tagNames" :existing="form.description" @result="(t) => (form.description = t)" />
-          </div>
-          <Textarea id="task-description" v-model="description" rows="4" />
-        </div>
+      <form class="flex flex-1 flex-col min-h-0" @submit.prevent="save">
+        <Tabs v-if="dialog.mode === 'edit'" v-model="activeTab" class="flex flex-1 flex-col min-h-0">
+          <TabsList>
+            <TabsTrigger value="details">
+              Details
+            </TabsTrigger>
+            <TabsTrigger value="history">
+              History ({{ events.length }})
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="details" class="overflow-y-auto min-h-0 space-y-4">
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <Label for="task-title">Title</Label>
+                <AiTitleSuggestions :title="form.title" :description="form.description" :project-name="projectName" @pick="(t) => (form.title = t)" />
+              </div>
+              <Input id="task-title" v-model="form.title" required autofocus maxlength="200" />
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <ProjectPicker v-model="form.projectId" />
+              <DeadlinePicker v-model="form.deadline" />
+            </div>
+            <TagPicker v-model="form.tagIds" />
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <Label for="task-description">Description</Label>
+                <AiDescriptionButton :title="form.title" :project-name="projectName" :tags="tagNames" :existing="form.description" @result="(t) => (form.description = t)" />
+              </div>
+              <Textarea id="task-description" v-model="description" rows="4" />
+            </div>
 
-        <ChecklistEditor
-          v-if="showMore"
-          :task-id="dialog.mode === 'edit' ? dialog.taskId : null"
-          v-model:draft="draftChecklist"
-        />
-        <AiSubtaskSuggestions v-if="showMore" :title="form.title" :description="form.description" @add="onAddSuggested" />
-
-        <template v-if="dialog.mode === 'edit' && currentTask">
-          <Separator />
-          <div class="space-y-2">
-            <h3 class="text-sm font-medium">
-              History
-            </h3>
-            <dl class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-muted-foreground">
+            <ChecklistEditor
+              :task-id="dialog.taskId"
+              v-model:draft="draftChecklist"
+            />
+            <AiSubtaskSuggestions :title="form.title" :description="form.description" @add="onAddSuggested" />
+          </TabsContent>
+          <TabsContent value="history" class="overflow-y-auto min-h-0 space-y-2">
+            <dl v-if="currentTask" class="grid grid-cols-2 gap-x-2 gap-y-1 text-xs text-muted-foreground">
               <dt>Created</dt>
               <dd>{{ new Date(currentTask.createdAt).toLocaleString() }}</dd>
               <dt>Last state change</dt>
@@ -203,8 +189,56 @@ async function save() {
                 {{ fromLabel(e) }} → {{ toLabel(e) }} · {{ new Date(e.changedAt).toLocaleString() }}
               </li>
             </ul>
+          </TabsContent>
+        </Tabs>
+
+        <div v-else class="flex-1 overflow-y-auto min-h-0 space-y-4">
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <Label for="task-title">Title</Label>
+              <AiTitleSuggestions :title="form.title" :description="form.description" :project-name="projectName" @pick="(t) => (form.title = t)" />
+            </div>
+            <Input id="task-title" v-model="form.title" required autofocus maxlength="200" />
           </div>
-        </template>
+          <div class="flex flex-wrap items-center gap-2">
+            <ProjectPicker v-model="form.projectId" />
+            <DeadlinePicker v-if="showMore" v-model="form.deadline" />
+            <Select v-model="form.columnId as string">
+              <SelectTrigger class="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem v-for="c in store.visibleColumns" :key="c.id" :value="c.id">
+                  {{ c.name }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <TagPicker v-if="showMore" v-model="form.tagIds" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            :aria-expanded="moreOpen"
+            @click="moreOpen = !moreOpen"
+          >
+            More details
+          </Button>
+          <div v-if="showMore" class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <Label for="task-description">Description</Label>
+              <AiDescriptionButton :title="form.title" :project-name="projectName" :tags="tagNames" :existing="form.description" @result="(t) => (form.description = t)" />
+            </div>
+            <Textarea id="task-description" v-model="description" rows="4" />
+          </div>
+
+          <ChecklistEditor
+            v-if="showMore"
+            :task-id="null"
+            v-model:draft="draftChecklist"
+          />
+          <AiSubtaskSuggestions v-if="showMore" :title="form.title" :description="form.description" @add="onAddSuggested" />
+        </div>
 
         <DialogFooter>
           <Button type="button" variant="outline" @click="close">

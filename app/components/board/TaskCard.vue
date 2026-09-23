@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
-import { AlertCircle, EllipsisVertical, Pencil } from '@lucide/vue'
+import { AlertCircle, Check, EllipsisVertical, Pencil, X } from '@lucide/vue'
 import type { Task } from '#shared/types/domain'
 import { daysBetween, isOverdue, localDateIso } from '#shared/utils/dates'
 import { useBoardStore } from '../../stores/board'
@@ -16,6 +16,7 @@ const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 60_000) })
 
 const confirmOpen = ref(false)
 
+const inlineEditing = useState('inlineEditing', () => false)
 const editingTitle = ref(false)
 const draftTitle = ref('')
 const titleInputRef = ref()
@@ -26,6 +27,7 @@ const kind = computed(() => column.value?.kind ?? 'open')
 function startEdit() {
   draftTitle.value = props.task.title
   editingTitle.value = true
+  inlineEditing.value = true
   nextTick(() => {
     const el = titleInputRef.value?.$el as HTMLInputElement | undefined
     el?.select()
@@ -34,14 +36,17 @@ function startEdit() {
 
 function cancelTitle() {
   editingTitle.value = false
+  inlineEditing.value = false
 }
 
 function commitTitle() {
+  if (!editingTitle.value) return
   const trimmed = draftTitle.value.trim()
   if (trimmed && trimmed !== props.task.title) {
     store.updateTask(props.task.id, { title: trimmed })
   }
   editingTitle.value = false
+  inlineEditing.value = false
 }
 
 const otherColumns = computed(() => store.visibleColumns.filter((c) => c.id !== props.task.columnId))
@@ -55,24 +60,50 @@ function onDelete() {
 </script>
 
 <template>
-  <Card class="cursor-grab gap-2 py-3">
+  <Card class="cursor-grab gap-2 py-3" :data-no-open="editingTitle ? '' : undefined">
     <CardHeader class="flex flex-row items-start justify-between gap-2 px-3">
       <CardTitle class="flex-1 text-sm font-medium line-clamp-2">
         <span v-if="!editingTitle" class="line-clamp-2 text-sm font-medium">
           {{ task.title }}
         </span>
-        <Input
-          v-else
-          ref="titleInputRef"
-          v-model="draftTitle"
-          autofocus
-          data-no-drag
-          class="h-7 text-sm"
-          @keydown.enter.stop="commitTitle"
-          @keydown.escape.stop="cancelTitle"
-          @keydown.space.stop
-          @blur="commitTitle"
-        />
+        <div v-else class="flex items-center gap-1">
+          <Input
+            ref="titleInputRef"
+            v-model="draftTitle"
+            autofocus
+            data-no-drag
+            data-no-open
+            class="h-7 bg-transparent dark:bg-transparent shadow-none px-1.5 text-sm font-medium"
+            @keydown.enter.stop="commitTitle"
+            @keydown.escape.stop="cancelTitle"
+            @keydown.space.stop
+            @blur="commitTitle"
+          />
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6 shrink-0"
+            aria-label="Save title"
+            data-no-drag
+            data-no-open
+            @mousedown.prevent
+            @click.stop="commitTitle"
+          >
+            <Check class="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6 shrink-0"
+            aria-label="Cancel rename"
+            data-no-drag
+            data-no-open
+            @mousedown.prevent
+            @click.stop="cancelTitle"
+          >
+            <X class="size-3.5" />
+          </Button>
+        </div>
       </CardTitle>
       <div class="flex shrink-0 items-center gap-0.5">
         <Button
@@ -126,11 +157,11 @@ function onDelete() {
             v-if="pickedProject"
             type="button"
             :aria-label="`Project: ${pickedProject.name}. Change project`"
-            class="order-1 rounded-full focus-visible:ring-2 focus-visible:ring-ring outline-none"
+            class="order-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring outline-none"
             @dblclick.stop
             @keydown.stop
           >
-            <ColorBadge :label="pickedProject.name" :color="pickedProject.color" />
+            <ProjectBadge :label="pickedProject.name" :color="pickedProject.color" />
           </button>
           <button
             v-else

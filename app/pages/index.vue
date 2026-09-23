@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { ChartColumn, Plus } from '@lucide/vue'
+import { ChartColumn, Folder, Plus } from '@lucide/vue'
 import { useBoardStore } from '../stores/board'
 import { useTaskDialog } from '../composables/useTaskDialog'
 
@@ -40,7 +40,7 @@ const filterValue = computed<string>({
           <SelectItem value="__none">No project</SelectItem>
           <SelectItem v-for="p in store.projects" :key="p.id" :value="p.id">
             <span class="flex items-center gap-2">
-              <span class="size-2 rounded-full" :style="{ background: `var(--swatch-${p.color})` }" aria-hidden="true" />
+              <Folder class="size-3.5" :style="{ color: `var(--swatch-${p.color})` }" aria-hidden="true" />
               {{ p.name }}
             </span>
           </SelectItem>

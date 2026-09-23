@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check } from '@lucide/vue'
+import { Check, Folder } from '@lucide/vue'
 import { useBoardStore } from '../../stores/board'
 
 const model = defineModel<string | null>({ required: true })
@@ -37,12 +37,10 @@ async function onCreate(name: string) {
     <PopoverTrigger as-child>
       <slot :project="selectedProject">
         <Button variant="outline" size="sm" aria-label="Project">
-          <span
-            class="size-2 rounded-full"
-            :style="{ background: selectedProject ? `var(--swatch-${selectedProject.color})` : 'var(--muted-foreground)' }"
-            aria-hidden="true"
+          <ProjectBadge
+            :label="selectedProject ? selectedProject.name : 'No project'"
+            :color="selectedProject ? selectedProject.color : null"
           />
-          {{ selectedProject ? selectedProject.name : 'No project' }}
         </Button>
       </slot>
     </PopoverTrigger>
@@ -56,9 +54,9 @@ async function onCreate(name: string) {
               No project
             </CommandItem>
             <CommandItem v-for="p in store.projects" :key="p.id" :value="p.id" @select="select(p.id)">
-              <span
-                class="size-2 rounded-full"
-                :style="{ background: `var(--swatch-${p.color})` }"
+              <Folder
+                class="size-3.5"
+                :style="{ color: `var(--swatch-${p.color})` }"
                 aria-hidden="true"
               />
               {{ p.name }}
