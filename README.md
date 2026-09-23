@@ -10,7 +10,7 @@
   A local-first Kanban board that turns your daily work into evidence for performance and salary conversations.
 </p>
 
-<div align="left">
+<div align="center">
   <img alt="Nuxt 4" src="https://img.shields.io/badge/Nuxt-4-00DC82?logo=nuxt&logoColor=white" />
   <img alt="Vue 3" src="https://img.shields.io/badge/Vue-3-4FC08D?logo=vuedotjs&logoColor=white" />
   <img alt="PostgreSQL 17" src="https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white" />
