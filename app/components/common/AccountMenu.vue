@@ -10,7 +10,7 @@ const passwordOpen = ref(false)
 
 async function onSignOut() {
   await clear()
-  await navigateTo('/login')
+  reloadNuxtApp({ path: '/login' })
 }
 </script>
 

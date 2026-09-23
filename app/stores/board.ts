@@ -51,7 +51,7 @@ export const useBoardStore = defineStore('board', () => {
       if (import.meta.client && isUnauthorized(e)) {
         const { clear } = useUserSession()
         await clear()
-        await navigateTo('/login')
+        reloadNuxtApp({ path: '/login' })
         return
       }
       throw e
@@ -78,7 +78,7 @@ export const useBoardStore = defineStore('board', () => {
       if (isUnauthorized(e)) {
         const { clear } = useUserSession()
         await clear()
-        await navigateTo('/login')
+        reloadNuxtApp({ path: '/login' })
         return undefined
       }
       lastError.value = extractErrorMessage(e)
