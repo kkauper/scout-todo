@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm'
-import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task, TaskLink, TaskLinkType } from '#shared/types/domain'
+import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task, TaskLink, TaskLinkType, TimeEntry } from '#shared/types/domain'
 import * as schema from '../db/schema'
 import type { useDb } from './db'
 
@@ -9,6 +9,7 @@ type BoardColumnRow = typeof schema.boardColumns.$inferSelect
 type TaskRow = typeof schema.tasks.$inferSelect
 type ChecklistItemRow = typeof schema.checklistItems.$inferSelect
 type TaskLinkRow = typeof schema.taskLinks.$inferSelect
+type TimeEntryRow = typeof schema.timeEntries.$inferSelect
 
 export function toProject(row: ProjectRow): Project {
   return {
@@ -79,6 +80,16 @@ export function toTaskLink(row: TaskLinkRow): TaskLink {
     toTaskId: row.toTaskId,
     type: row.type as TaskLinkType,
     createdAt: row.createdAt.toISOString(),
+  }
+}
+
+export function toTimeEntry(row: TimeEntryRow): TimeEntry {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    startedAt: row.startedAt.toISOString(),
+    endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+    lastSeenAt: row.lastSeenAt.toISOString(),
   }
 }
 

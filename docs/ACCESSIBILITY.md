@@ -34,6 +34,16 @@ This isn't a formal conformance claim until the manual test pass below is comple
 - On desktop the panel doesn't block the board. While it's open, the board scroller gets `scroll-padding-inline-end`, so a focused card is never hidden under the panel (SC 2.4.11).
 - Focus outlines still show in Windows High Contrast (`forced-colors`), where Tailwind's `box-shadow` rings disappear.
 
+### Time tracking
+
+- **Names, not ticking text:** the Start/Stop timer buttons (card, task panel, header) have an accessible name built from `formatDuration` (minute granularity: `"12 min"`, `"1 h 05 min"`) — idle is `Start timer for "<title>"`, running is `Stop timer for "<title>", <duration> tracked`. The live `formatClock` readout (`"12:34"`) next to the icon is always in an `aria-hidden="true"` span, so assistive tech never hears a name that changes every second.
+- **Announcements, not live ticking:** starting, stopping, adding time and deleting an entry each announce once through `useLiveAnnouncer` (e.g. `Timer started for "…"`, `Timer stopped for "…", 12 min tracked`, `Added 15 min`, `Entry deleted`); starting a timer while another is running announces both the stop and the start in one message. The clock itself never triggers an announcement — only the plugin's discrete state changes do.
+- **Discarded (under a minute) entries:** an entry that ends with a duration under `TIMER_MIN_ENTRY_SECONDS` (60 s) is discarded, not saved — stopping or switching away from such a timer announces `Timer stopped for "<title>" — under a minute, not recorded` instead of the usual "<duration> tracked" text (card, task panel, header); the discarded entry never appears once the entry list refreshes.
+- **Stale-close notice:** if a running timer goes stale (computer asleep or browser closed for more than 10 minutes), `app/plugins/timer.client.ts` announces the notice text exactly once (`watch` on `store.timerNotice`) the moment it appears; the visible notice bar in `pages/index.vue` itself carries no live region, so it is never announced twice. If the stale entry itself ran under a minute, it is discarded and the notice text says so instead of giving a stop time.
+- **Manual time entry validation:** the minutes field's out-of-range error uses `role="alert"` and `aria-describedby`, matching the existing error convention.
+- **Add time popover, entries collapsible:** the task panel's quick-add buttons and minutes field live in a popover behind an "Add time" trigger; a successful add closes the popover and returns focus to that trigger. The entry list is closed by default behind an "Entries (n)" disclosure button (hidden when there are no entries), whose chevron rotation is skipped for `prefers-reduced-motion`.
+- **Hydration:** the ticking clock reads a shared `useState('timerNow', …)` clock; the `aria-hidden` clock text itself is wrapped in `<ClientOnly>` in every place it appears (card, task panel, header) so a client/server time difference can never produce a hydration-mismatch warning.
+
 ### Screen readers
 
 - **Cards:** each card title is a `<button>` whose description reads out the column, due date or overdue state, what blocks it, its size, checklist progress and the move shortcut.
@@ -45,6 +55,7 @@ This isn't a formal conformance claim until the manual test pass below is comple
   - AI progress
   - a successful password change
   - a task deleted in another tab
+  - timer started/stopped, time added or an entry deleted, and a stale timer's close notice (once)
 
   Errors use `role="alert"` next to the field and are linked to it with `aria-invalid` and `aria-describedby`.
 - **Landmarks:** each column is a `<section>` named by its heading. The mobile column switcher is a `<nav>`, not a tablist, because all columns stay rendered and visible.

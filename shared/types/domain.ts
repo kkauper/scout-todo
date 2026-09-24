@@ -50,4 +50,20 @@ export const TASK_LINK_TYPES = ['blocks', 'relates', 'duplicates'] as const
 export type TaskLinkType = (typeof TASK_LINK_TYPES)[number]
 export interface TaskLink { id: string; fromTaskId: string; toTaskId: string; type: TaskLinkType; createdAt: string }
 
-export interface BoardData { projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[]; links: TaskLink[] }
+export const TIMER_STALE_AFTER_MS = 10 * 60_000
+export const TIMER_HEARTBEAT_MS = 60_000
+export const TIMER_MIN_ENTRY_SECONDS = 60
+export interface TimeEntry { id: string; taskId: string; startedAt: string; endedAt: string | null; lastSeenAt: string }
+export interface RunningTimer { entryId: string; taskId: string; startedAt: string; lastSeenAt: string }
+export interface TimerState {
+  running: RunningTimer | null
+  staleClosed: { taskId: string; endedAt: string; discarded: boolean } | null
+  stopped: { taskId: string; discarded: boolean } | null
+}
+
+export interface BoardData {
+  projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[]; links: TaskLink[]
+  timeTotals: Record<string, number>
+  runningTimer: RunningTimer | null
+  timerStaleClosed: { taskId: string; endedAt: string; discarded: boolean } | null
+}

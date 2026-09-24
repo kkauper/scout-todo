@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { ClipboardCopyIcon } from '@lucide/vue'
 import { TASK_SIZE_LABELS, TASK_SIZES } from '#shared/types/domain'
 import { formatKpiSummary } from '#shared/utils/kpi-summary'
+import { formatDuration } from '#shared/utils/timer'
 import { useBoardStore } from '../../stores/board'
 import { useKpis } from '../../composables/useKpis'
 import AchievementSummary from '../ai/AchievementSummary.vue'
@@ -42,6 +43,10 @@ function sizeCountsLabel(counts: Record<string, number>): string {
   const parts = TASK_SIZES.map((s) => `${TASK_SIZE_LABELS[s]} ${counts[s]}`)
   parts.push(`unsized ${counts.none}`)
   return parts.join(' · ')
+}
+
+function fmtOptionalDuration(seconds: number | null): string {
+  return seconds === null ? '—' : formatDuration(seconds)
 }
 </script>
 
@@ -167,6 +172,55 @@ function sizeCountsLabel(counts: Record<string, number>): string {
           />
         </div>
         <ThroughputBars :weekly="report.throughput.weekly" metric="weight" unit="pts" />
+      </div>
+
+      <Separator />
+      <div class="flex flex-col gap-2">
+        <h3 class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Time
+        </h3>
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <KpiStat
+            label="Tracked (30d)"
+            :value="formatDuration(report.time.last30DaysSeconds)"
+          />
+        </div>
+        <table class="w-full text-xs">
+          <caption class="sr-only">
+            Average tracked time per done task, by size
+          </caption>
+          <thead>
+            <tr class="text-muted-foreground">
+              <th scope="col" class="py-1 text-left font-medium">
+                Size
+              </th>
+              <th scope="col" class="py-1 text-right font-medium">
+                Avg time per done task
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="size in TASK_SIZES" :key="size" class="border-t border-border">
+              <th scope="row" class="py-1 text-left font-normal">
+                {{ TASK_SIZE_LABELS[size] }}
+              </th>
+              <td class="py-1 text-right tabular-nums">
+                {{ fmtOptionalDuration(report.time.avgDoneSecondsBySize[size]) }}
+              </td>
+            </tr>
+            <tr class="border-t border-border">
+              <th scope="row" class="py-1 text-left font-normal">
+                Unsized
+              </th>
+              <td class="py-1 text-right tabular-nums">
+                {{ fmtOptionalDuration(report.time.avgDoneSecondsBySize.none) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-xs text-muted-foreground">
+          {{ report.time.doneTasksWithoutTime }} done tasks without tracked time
+        </p>
       </div>
     </template>
 

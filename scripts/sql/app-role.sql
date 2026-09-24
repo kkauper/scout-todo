@@ -16,7 +16,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE O
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['users','projects','tags','board_columns','tasks','task_tags','checklist_items','task_state_events'] LOOP
+  FOREACH t IN ARRAY ARRAY['users','projects','tags','board_columns','tasks','task_tags','checklist_items','task_state_events','task_links','time_entries'] LOOP
     EXECUTE format('DROP POLICY IF EXISTS scout_app_all ON public.%I', t);
     EXECUTE format('CREATE POLICY scout_app_all ON public.%I FOR ALL TO scout_app USING (true) WITH CHECK (true)', t);
   END LOOP;

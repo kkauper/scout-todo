@@ -92,6 +92,8 @@ Put `NUXT_SESSION_PASSWORD` in `.dev.vars` for local preview.
 - Migration `0005` adds `users.session_version`; run it before deploying. Existing sessions are signed out once after this deploy.
 - Stored Claude keys are now bound to the user (AES-GCM additional authenticated data); keys saved before this update must be re-entered once in Account → AI settings.
 - `AI_LIMITER` (per-user AI rate limit) is created on deploy via the `ratelimits` entry in `wrangler.jsonc`; no manual setup needed.
+- Migrations `0006` (`tasks.size`) and `0007` (new table `task_links`) must run before deploying; without them `/api/board` fails and signed-in users get a redirect loop. `task_links` also needs the `scout_app_all` policy: re-run `scripts/sql/app-role.sql` (it no longer creates the role if it exists) or run `CREATE POLICY scout_app_all ON public.task_links FOR ALL TO scout_app USING (true) WITH CHECK (true);` in the SQL editor.
+- Migration `0008` adds `time_entries` (time tracking) and creates the `scout_app` policies for both `time_entries` and `task_links` itself (guarded, only runs when the `scout_app` role already exists) — no manual policy step needed after running it.
 
 ### Upgrading from a single-account deployment
 

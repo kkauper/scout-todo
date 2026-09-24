@@ -57,6 +57,13 @@
       "when": 1790233180627,
       "tag": "0007_gigantic_sentry",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790252533756,
+      "tag": "0008_stormy_deathstrike",
+      "breakpoints": true
     }
   ]
 }

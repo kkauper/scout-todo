@@ -29,10 +29,11 @@ app/
   assets/css/tailwind.css      tokens (shadcn vars + --swatch-* colors)
   components/ui/**             shadcn-vue generated — do not hand-edit except theming
   components/board/*.vue       KanbanBoard, BoardColumn, TaskCard, QuickAddTask
-  components/task/*.vue        TaskDialog, ProjectPicker, TagPicker, DeadlinePicker, SizePicker, TaskLinks
+  components/task/*.vue        TaskDialog, ProjectPicker, TagPicker, DeadlinePicker, SizePicker, TaskLinks, TaskTime
   components/kpi/*.vue         KpiPanel, KpiStat, KpiStateBar, ThroughputBars
-  components/common/*.vue      ColorBadge, ColorPicker
+  components/common/*.vue      ColorBadge, ColorPicker, RunningTimer
   stores/board.ts              Pinia store
+  plugins/board-sync.client.ts cross-tab sync; plugins/timer.client.ts timer ticker/heartbeat
   lib/utils.ts                 shadcn `cn()`
 shared/                        imported by app AND server (Nuxt 4 `#shared` alias)
   types/domain.ts              states, colors, DTOs
@@ -41,6 +42,7 @@ shared/                        imported by app AND server (Nuxt 4 `#shared` alia
   utils/dates.ts               day math, overdue
   utils/kpi.ts                 KPI computation (pure)
   utils/links.ts                task link normalize/group/isBlocked (pure)
+  utils/timer.ts                timer/time-entry pure logic (formatDuration, formatClock, taskTrackedSeconds, isStale)
 server/
   db/schema.ts                 Drizzle schema
   db/migrations/               drizzle-kit output (committed)
@@ -96,7 +98,23 @@ export const TASK_LINK_TYPES = ['blocks', 'relates', 'duplicates'] as const
 export type TaskLinkType = (typeof TASK_LINK_TYPES)[number]
 export interface TaskLink { id: string; fromTaskId: string; toTaskId: string; type: TaskLinkType; createdAt: string }
 
-export interface BoardData { projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[]; links: TaskLink[] }
+export const TIMER_STALE_AFTER_MS = 10 * 60_000   // 10 min
+export const TIMER_HEARTBEAT_MS = 60_000          // client heartbeat interval
+export const TIMER_MIN_ENTRY_SECONDS = 60         // entries ending shorter than this are discarded, not saved
+export interface TimeEntry { id: string; taskId: string; startedAt: string; endedAt: string | null; lastSeenAt: string }
+export interface RunningTimer { entryId: string; taskId: string; startedAt: string; lastSeenAt: string }
+export interface TimerState {
+  running: RunningTimer | null
+  staleClosed: { taskId: string; endedAt: string; discarded: boolean } | null
+  stopped: { taskId: string; discarded: boolean } | null   // the entry this request ended (manual stop or switch), if any
+}
+
+export interface BoardData {
+  projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[]; links: TaskLink[]
+  timeTotals: Record<string, number>              // seconds of FINISHED entries per taskId
+  runningTimer: RunningTimer | null
+  timerStaleClosed: { taskId: string; endedAt: string; discarded: boolean } | null   // set when this request's stale close ended something
+}
 // columns sorted by position, includes hidden ones.
 ```
 
@@ -124,7 +142,7 @@ Float `position`, ascending within a column. `positionBetween(before: number | n
 
 ### KPIs (`shared/utils/kpi.ts`)
 
-`computeKpis(tasks: Task[], projects: Project[], columns: BoardColumn[], now: Date, opts?: { projectId?: string | null | 'none'; weeks?: number /*default 8*/ }): KpiReport`
+`computeKpis(tasks: Task[], projects: Project[], columns: BoardColumn[], now: Date, opts?: { projectId?: string | null | 'none'; weeks?: number /*default 8*/; timeEntries?: { taskId: string; startedAt: string; endedAt: string }[] }): KpiReport`
 Filter: `undefined` = all; `'none'` = unassigned; id = that project. Kind of a task = kind of its column; unknown columnId counts as `open`.
 
 ```ts
@@ -157,8 +175,15 @@ interface KpiReport {
     wipWeight: number                                          // sum of TASK_SIZE_WEIGHTS over wip (unsized = 0)
     unsizedShare: number | null                                // unsized / (open + wip) not-done tasks; null when there are none
   }
+  time: {
+    last30DaysSeconds: number                                  // sum of finished time-entry durations with `endedAt` in (now-30d, now]; entries straddling the window boundary are clipped to the part inside it
+    avgDoneSecondsBySize: Record<TaskSize | 'none', number | null>  // for scoped done tasks with tracked > 0: average total tracked seconds per size; null when no such task
+    trackedDoneTasks: number                                   // scoped done tasks with tracked > 0
+    doneTasksWithoutTime: number                               // scoped done tasks with 0 tracked seconds
+  }
 }
 ```
+`opts.timeEntries?: { taskId: string; startedAt: string; endedAt: string }[]` (finished entries only, any scope) drives `time`; entries for out-of-scope tasks are ignored. When omitted, `time` is all zeros/nulls.
 Round day values to 1 decimal. Median of even sample = mean of middle two.
 
 ## Database (Drizzle, `server/db/schema.ts`)
@@ -177,6 +202,24 @@ Round day values to 1 decimal. Median of even sample = mean of middle two.
   - Semantics: `blocks` from A to B = "A blocks B" (B is blocked by A). `duplicates` from A to B = "A duplicates B". `relates` is symmetric and always stored with `from_task_id < to_task_id` (string compare) so a pair is only ever stored once. `shared/utils/links.ts` (pure, unit-tested): `normalizeLink(fromTaskId, toTaskId, type)` (null on self-link; sorts `relates` pairs), `groupLinksForTask(taskId, links)` → `{ blocks, blockedBy, relates, duplicates, duplicatedBy }` (each `{ link, otherTaskId }[]`), `isBlocked(taskId, links, isDone)` → true if any non-done `blocks` link points at the task.
 - `task_state_events`: `id uuid pk`, `task_id` → tasks cascade, `from_column_id uuid` → board_columns onDelete set null (nullable), `to_column_id uuid` → board_columns onDelete set null (nullable), `to_kind column_kind notNull`, `changed_at timestamptz notNull defaultNow`; index `(task_id, changed_at)`
   - Row written on create (from null) and on every column change (move, or column deletion moving its tasks). `to_kind` is the kind of the destination column at the time of the event, kept even if that column is later deleted (columns become null via FK, `to_kind` does not). Source for history/audit + future analytics.
+- `time_entries`: `id uuid pk defaultRandom`, `user_id uuid notNull` → users cascade, `task_id uuid notNull` → tasks cascade, `started_at timestamptz notNull`, `ended_at timestamptz` (nullable — null means running), `last_seen_at timestamptz notNull`, `created_at timestamptz notNull defaultNow`
+  - index `(task_id)`; unique partial index `(user_id) WHERE ended_at IS NULL` — enforces one running timer per user at the DB level; check `ended_at IS NULL OR ended_at >= started_at`.
+
+### Time tracking
+
+One running timer per user, enforced by the partial unique index above. Starting a timer on task B stops any timer already running on task A first (in the same transaction); starting a timer on the task that's already running is a no-op that returns the current state. All timestamps (`started_at`, `ended_at`, `last_seen_at`) are server-set, never client-supplied.
+
+While a timer runs, the client calls `POST /api/timer/heartbeat` every `TIMER_HEARTBEAT_MS` (60 s) to bump `last_seen_at`. A running entry whose `last_seen_at` is older than `TIMER_STALE_AFTER_MS` (10 min) is considered dead (computer asleep, browser closed, tab killed) — the **stale close** ends it at `ended_at = last_seen_at` (not `now`, so the recorded duration reflects when the client was last known alive). `server/utils/timer.ts#closeStaleTimer(tx, userId, now)` implements this and is called first, inside the same transaction, by every timer/time-entry endpoint and by `GET /api/board`; when it fires, the response's `staleClosed`/`timerStaleClosed` field is filled so the UI can announce it.
+
+Moving a task into a column of `kind: 'done'` (`POST /api/tasks/:id/move`) stops that task's running timer at `ended_at = now` (`server/utils/timer.ts#stopRunningTimer(tx, userId, now, { taskId })`) — no stale close involved there, it's an immediate, unconditional stop scoped to that task.
+
+**Discard rule:** any entry that would end with a duration under `TIMER_MIN_ENTRY_SECONDS` (60 s) is deleted instead of closed — nothing under a minute is ever recorded. This applies to every way a running entry ends: manual stop (`DELETE /api/timer`), switching the timer to another task (`POST /api/tasks/:id/timer` while another task's timer is running), moving the task to a `done` column (`stopRunningTimer`), and the stale close above (`closeStaleTimer`, using `last_seen_at - started_at`). `server/utils/timer.ts#endEntry(tx, entry, endedAt)` is the single helper implementing this (used by `closeStaleTimer`, `stopRunningTimer`, and the switch branch of `POST /api/tasks/:id/timer`): it deletes the entry (guarded by `ended_at IS NULL`) when `isDiscardable(startedAt, endedAt)` is true, otherwise sets `ended_at` as usual. The decision itself lives in `shared/utils/timer.ts#isDiscardable(startedAt, endedAt)`. Manual "add time" (below) is unaffected — it already has a 1-minute minimum. `TimerState.staleClosed`/`BoardData.timerStaleClosed` and `TimerState.stopped` all carry a `discarded: boolean` flag so the UI can explain when nothing was recorded; `TimerState.stopped: { taskId, discarded } | null` describes the entry this request ended (manual stop or switch) so the client announces it correctly.
+
+Manual time entry: `POST /api/tasks/:id/time-entries { minutes }` (1–1440) inserts an already-finished entry (`started_at = now - minutes`, `ended_at = now`). Deleting an entry (`DELETE /api/time-entries/:id`) only works on finished entries; deleting the running one 409s ("Stop the timer first").
+
+Pure decision logic lives in `shared/utils/timer.ts` (relative imports only, unit-tested in `tests/unit/timer.test.ts`): `isStale(lastSeenAt, now)` (strictly greater than the window), `durationSeconds(startedAt, endedAt)`, `isDiscardable(startedAt, endedAt)` (true when the duration is under `TIMER_MIN_ENTRY_SECONDS`), `formatDuration(seconds)` (`"0 min"` below 60 s, `"12 min"` below an hour, else `"1 h 05 min"`), `formatClock(seconds)` (`"0:12:34"` / `"12:34:56"`), and `taskTrackedSeconds(taskId, totals, running, now)` — finished total plus the live running part when `running.taskId === taskId` (capped at `lastSeenAt` instead of `now` if that running entry has gone stale).
+
+`server/utils/timer.ts` (server-side, DB-touching): `endEntry(tx, entry: { id, startedAt }, endedAt)` (deletes or closes an entry per the discard rule above, returns `{ discarded, entry }`), `closeStaleTimer`, `getRunningTimer(db, userId)`, `stopRunningTimer(tx, userId, now, opts?: { taskId })` (only stops when running on `opts.taskId`, if given; returns `{ taskId, discarded, entry } | null`). Mapper `toTimeEntry(row)` in `server/utils/mappers.ts`.
 
 Deleting a column with tasks in it requires `moveTo` another column; deleting a column that ends up referenced by past events sets the corresponding `from_column_id`/`to_column_id` to null (`ON DELETE SET NULL`) — history is preserved, just anonymized on the deleted column's identity. `tasks.column_id` itself uses `ON DELETE RESTRICT`: a column can only be deleted once it has no tasks left (the API enforces the `moveTo` step before deleting).
 
@@ -205,6 +248,12 @@ All timestamptz columns use `{ withTimezone: true, mode: 'date' }`; mappers conv
 | DELETE | `/api/links/:id` | — | 204 (404 unless the link's `from_task_id` task belongs to the caller) |
 | POST | `/api/checklist/:id/convert` | — | `{ task: Task, link: TaskLink, item: ChecklistItem }` — creates a task from the checklist item (title, parent's `projectId`, first open column), adds a `relates` link to the parent, marks the item done (404 unless the item's task belongs to the caller) |
 | GET | `/api/kpis` | `?projectId=<uuid>|none` | `KpiReport` |
+| POST | `/api/tasks/:id/timer` | — | `TimerState` — starts a timer on the task (stops any other running timer first); no-op if already running on this task; 409 on a unique-violation race |
+| DELETE | `/api/timer` | — | `TimerState` (`running: null`) — stops the caller's running timer, if any (200 either way); `stopped` describes it (`discarded: true` if it ran under `TIMER_MIN_ENTRY_SECONDS`, in which case it was deleted, not saved) |
+| POST | `/api/timer/heartbeat` | — | `TimerState` — bumps `last_seen_at` on the running timer; `staleClosed` filled if the stale close fired first |
+| GET | `/api/tasks/:id/time-entries` | — | `TimeEntry[]`, newest first |
+| POST | `/api/tasks/:id/time-entries` | `{ minutes: 1..1440 }` | `TimeEntry`, 201 — manual finished entry ending now |
+| DELETE | `/api/time-entries/:id` | — | 204 (404 unless the entry belongs to the caller; 409 "Stop the timer first" if it's still running) |
 
 Validation errors → 400 via zod. Unknown id → 404. `updated_at` set on every mutation.
 Analytics hook: server emits `useNitroApp().hooks.callHook('scout:task-moved', { taskId, fromColumnId, toColumnId, toKind, at })` after move; plugin `server/plugins/analytics.ts` logs in dev. Extensible later.
@@ -213,11 +262,19 @@ Analytics hook: server emits `useNitroApp().hooks.callHook('scout:task-moved', {
 
 ### Store `app/stores/board.ts` (`useBoardStore`, setup style)
 
-State: `projects`, `tags`, `tasks`, `columns: BoardColumn[]`, `links: TaskLink[]`, `projectFilter: string | null | 'none'` (null = all), `loaded`.
+State: `projects`, `tags`, `tasks`, `columns: BoardColumn[]`, `links: TaskLink[]`, `projectFilter: string | null | 'none'` (null = all), `loaded`, `runningTimer: RunningTimer | null`, `timeTotals: Record<string, number>` (finished seconds per task), `timerNotice: string | null` (visible stale-close notice text).
 Getters: `projectById`, `tagById`, `columnById` (Map lookups); `sortedColumns` (by position, includes hidden), `visibleColumns` (not hidden), `hiddenColumns`; `visibleTasks`; `tasksByColumn(columnId)` (filtered by `visibleTasks`, sorted by position).
-Actions: `load()`, `createTask({ title, columnId?, projectId?, description?, deadline?, size?, tagIds? })`, `updateTask` (patch incl. `size?: TaskSize | null`), `moveTask(id, toColumnId, toIndex)` (resolves `fromKind` from the task's current column, applies `transitionPatch`), `deleteTask` (also drops local links referencing the task), `createProject`, `createTag`, `addChecklistItems`/`updateChecklistItem`/`deleteChecklistItem`, `fetchEvents`, `addLink(taskId, toTaskId, type)` (POST, pushes the returned `TaskLink`), `removeLink(id)` (optimistic filter, then DELETE), `convertChecklistItem(taskId, itemId)` (POST `/api/checklist/:id/convert`; upserts the new task, pushes the `relates` link, replaces the checklist item; returns the new `Task`).
+Actions: `load()` (also seeds `runningTimer`/`timeTotals` from `BoardData` and calls `setStaleNotice` if `timerStaleClosed` is set), `createTask({ title, columnId?, projectId?, description?, deadline?, size?, tagIds? })`, `updateTask` (patch incl. `size?: TaskSize | null`), `moveTask(id, toColumnId, toIndex)` (resolves `fromKind` from the task's current column, applies `transitionPatch`; optimistically stops the running timer locally when the destination column's kind is `done` and it belongs to the moved task, folding its live seconds into `timeTotals` only when they reach `TIMER_MIN_ENTRY_SECONDS` — the server performs the real stop/discard), `deleteTask` (also drops local links referencing the task), `createProject`, `createTag`, `addChecklistItems`/`updateChecklistItem`/`deleteChecklistItem`, `fetchEvents`, `addLink(taskId, toTaskId, type)` (POST, pushes the returned `TaskLink`), `removeLink(id)` (optimistic filter, then DELETE), `convertChecklistItem(taskId, itemId)` (POST `/api/checklist/:id/convert`; upserts the new task, pushes the `relates` link, replaces the checklist item; returns the new `Task`).
 Column actions (all through the shared `run()` optimistic-then-reconcile wrapper, bump `revision`): `createColumn(name, kind)`, `updateColumn(id, patch: { name?; kind?; hidden?; position? })` (optimistic merge; reloads the whole board after a successful `kind` change since the server recomputes affected tasks' `completedAt`), `deleteColumn(id, moveTo?)` (always reloads the board after), `moveColumn(id, direction: -1 | 1)` (swaps with the neighbour in `sortedColumns` via a single `position` PATCH computed with `positionBetween` of the neighbour's neighbours).
 Mutations optimistic: apply locally (using `shared/` logic), call API, replace with server DTO; on error reload board and surface error.
+
+### Time tracking (frontend)
+
+Store: `setStaleNotice({ taskId, endedAt, discarded })` (builds the notice text from the task title and local `HH:MM`; when `discarded` is true the text instead says the timer ran less than a minute and nothing was recorded), `applyTimerState(state: TimerState)` (sets `runningTimer` and calls `setStaleNotice` when `staleClosed` is set — shared by every timer action below), `startTimer(taskId)` (optimistic: if another timer is running, folds its live seconds into `timeTotals` first — only when they reach `TIMER_MIN_ENTRY_SECONDS` — then sets a placeholder `runningTimer`; POSTs `/api/tasks/:id/timer`, applies the server `TimerState`), `stopTimer()` (optimistic local stop, folding live seconds into `timeTotals` only when they reach `TIMER_MIN_ENTRY_SECONDS`, then DELETE `/api/timer`), `heartbeat()` (plain `$fetch` to `/api/timer/heartbeat`, deliberately **not** routed through `run()` so it doesn't bump `revision` or spam other tabs via the sync channel; network errors are swallowed, the next heartbeat retries), `addTime(taskId, minutes)` (POST `/api/tasks/:id/time-entries`, adds `minutes*60` to `timeTotals` on success), `deleteTimeEntry(entry)` (DELETE `/api/time-entries/:id`, subtracts the entry's duration from `timeTotals`, floored at 0), `fetchTimeEntries(taskId)` (GET, used by `TaskTime`).
+
+Ticker/heartbeat plugin `app/plugins/timer.client.ts`: `useState('timerNow', () => Date.now())` is the single shared clock every component reads to compute live seconds (`taskTrackedSeconds`). While `store.runningTimer` is set it runs a 1s `setInterval` updating `timerNow` and a `TIMER_HEARTBEAT_MS` `setInterval` calling `store.heartbeat()`; both are cleared the moment `runningTimer` becomes `null` (`watch(() => store.runningTimer, ..., { immediate: true })`). It also calls `store.heartbeat()` immediately on `visibilitychange` (tab becoming visible) and on the `online` event, whichever fires first after the computer wakes from sleep or the network comes back — this is what makes a reconnect notice the stale-close quickly instead of waiting for the next minute tick. A separate `watch(() => store.timerNotice, ...)` calls `announce()` (`useLiveAnnouncer`) exactly once when the notice text becomes non-null, so the stale-close is announced once by the plugin, not by every component that happens to render the notice bar.
+
+UI: stopping or switching away from a timer that ran under `TIMER_MIN_ENTRY_SECONDS` announces `Timer stopped for "<title>" — under a minute, not recorded` instead of the usual "<duration> tracked" text (`board/TaskCard`, `task/TaskTime`, `common/RunningTimer`); the discarded entry simply doesn't show up when `TaskTime`'s entry list next refreshes. `board/TaskCard` has a `Play`/`Square` icon button in the header actions (before the ⋮ menu) — hover/focus-only when idle, always visible with a ticking `formatClock` next to it (in an `aria-hidden` span, wrapped in `<ClientOnly>`) when running on that card; a muted `Timer` icon + `formatDuration` shows in the meta row when idle with tracked time. `task/TaskTime` (in `TaskPanel`, between the checklist and `TaskLinks`) shows the live/total time, the same Start/Stop control, three quick-add buttons (+15 min/+30 min/+1 h) plus a minutes `Input` + Add form (1–1440, `role="alert"` on out-of-range), and the entry list (newest first, delete button per finished entry, none on the running one). `common/RunningTimer` (page header, before "New task") shows a ticking clock + task title button that opens the task, and a Stop icon button; only rendered while a timer is running. The visible stale-close notice bar lives in `pages/index.vue` (`store.timerNotice`, neutral `bg-muted`, plain markup — no live region, since the plugin already announces it once — with a Dismiss button).
 
 ### Cross-tab sync (`app/plugins/board-sync.client.ts`)
 
@@ -261,6 +318,7 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 | Deadline | `Popover` + `Calendar` (`@internationalized/date`, CalendarDate ↔ `YYYY-MM-DD`) |
 | Task size | `task/SizePicker` — `Select`/`SelectTrigger` (size `sm`) / `SelectItem`; "No size" (`__none`) maps to `null`, other items show `LABEL — hint`; trigger shows just the label (or "Size" placeholder) |
 | Task links | `task/TaskLinks` — grouped list (Blocks / Blocked by / Relates to / Duplicates / Duplicated by) with a `Popover` "Add link" (type `Select` + task search `Input`, up to 8 results) |
+| Time tracking | `board/TaskCard` timer button (header actions), `task/TaskTime` (panel: Start/Stop, quick-add `Button`s, minutes `Input` + `Label`, entry list), `common/RunningTimer` (header, `Button` pair) |
 | Project filter | `Select` |
 | KPI panel | `Sheet`, `Card`, `Progress`, `Separator`, `Tooltip` |
 | Scroll areas | column `ul` scrolls itself (native overflow) |
@@ -312,7 +370,7 @@ Username/password login via `nuxt-auth-utils` sealed httpOnly cookie sessions (n
 
 ## Accounts & isolation
 
-Accounts live in a `users` table (`id`, `username` unique, `password_hash` nullable, `created_at`); there is no public registration, accounts are created with `pnpm user:add <name>` and reset with `pnpm user:passwd <name>` (both prompt for a password, `server/db/users.ts`). Every `projects`, `tags`, `board_columns`, and `tasks` row carries a `user_id` (cascade on delete); child tables (`task_tags`, `checklist_items`, `task_state_events`) derive ownership through their parent task. Isolation is enforced in application code, not via Postgres RLS: every handler calls `requireUserId(event)` (`server/utils/owner.ts`) first and scopes its queries with `eq(table.userId, userId)`. An `[id]` route param belonging to another user always 404s; an id referenced in a request body/query (`projectId`, `columnId`, `tagIds`, `moveTo`) belonging to another user 400s — checked up front via `assertOwnedRefs(db, userId, refs, message)`. Session shape is `{ user: { id, name }, loggedInAt }`; a session without `user.id` is cleared and rejected with 401. In production RLS is enabled on every table with no policies for the Data API roles; the app connects as `scout_app`, which has a permissive per-table policy (`scripts/sql/app-role.sql`), so these app-level ownership checks remain the actual isolation mechanism.
+Accounts live in a `users` table (`id`, `username` unique, `password_hash` nullable, `created_at`); there is no public registration, accounts are created with `pnpm user:add <name>` and reset with `pnpm user:passwd <name>` (both prompt for a password, `server/db/users.ts`). Every `projects`, `tags`, `board_columns`, `tasks`, and `time_entries` row carries a `user_id` (cascade on delete); child tables (`task_tags`, `checklist_items`, `task_state_events`) derive ownership through their parent task. Isolation is enforced in application code, not via Postgres RLS: every handler calls `requireUserId(event)` (`server/utils/owner.ts`) first and scopes its queries with `eq(table.userId, userId)`. An `[id]` route param belonging to another user always 404s; an id referenced in a request body/query (`projectId`, `columnId`, `tagIds`, `moveTo`) belonging to another user 400s — checked up front via `assertOwnedRefs(db, userId, refs, message)`. Session shape is `{ user: { id, name }, loggedInAt }`; a session without `user.id` is cleared and rejected with 401. In production RLS is enabled on every table with no policies for the Data API roles; the app connects as `scout_app`, which has a permissive per-table policy (`scripts/sql/app-role.sql`), so these app-level ownership checks remain the actual isolation mechanism.
 
 ## AI (Claude or local Ollama)
 
@@ -334,4 +392,4 @@ Accounts live in a `users` table (`id`, `username` unique, `password_hash` nulla
 
 ## Extensibility notes
 
-Time tracking → new `time_entries` table keyed on task. Dependencies → `task_links`. Shared projects → membership table on top of `user_id` ownership. Event table already supports history/timeline views.
+Time tracking → `time_entries` table keyed on task, fully implemented end to end (see Time tracking above, both sections). Dependencies → `task_links`. Shared projects → membership table on top of `user_id` ownership. Event table already supports history/timeline views.

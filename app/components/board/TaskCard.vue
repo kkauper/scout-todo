@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
-import { AlertCircle, Ban, Check, EllipsisVertical, Pencil, X } from '@lucide/vue'
+import { AlertCircle, Ban, Check, EllipsisVertical, Pencil, Play, Square, Timer as TimerIcon, X } from '@lucide/vue'
 import type { BoardColumn, Task } from '#shared/types/domain'
-import { TASK_SIZE_HINTS, TASK_SIZE_LABELS } from '#shared/types/domain'
+import { TASK_SIZE_HINTS, TASK_SIZE_LABELS, TIMER_MIN_ENTRY_SECONDS } from '#shared/types/domain'
 import { daysBetween, isOverdue, localDateIso } from '#shared/utils/dates'
 import { isBlocked } from '#shared/utils/links'
+import { formatClock, formatDuration, taskTrackedSeconds } from '#shared/utils/timer'
 import { useBoardStore } from '../../stores/board'
 import { useTaskPanel } from '../../composables/useTaskPanel'
 import { useLiveAnnouncer } from '../../composables/useLiveAnnouncer'
@@ -76,6 +77,34 @@ const blockerTitle = computed(() => {
 const checklistDone = computed(() => props.task.checklist.filter((i) => i.done).length)
 const checklistTotal = computed(() => props.task.checklist.length)
 
+const timerNow = useState('timerNow', () => Date.now())
+const isRunningHere = computed(() => store.runningTimer?.taskId === props.task.id)
+const liveSeconds = computed(() => taskTrackedSeconds(props.task.id, store.timeTotals, store.runningTimer, new Date(timerNow.value)))
+const timerButtonLabel = computed(() => isRunningHere.value
+  ? `Stop timer for “${props.task.title}”, ${formatDuration(liveSeconds.value)} tracked`
+  : `Start timer for “${props.task.title}”`)
+
+async function onStartTimer() {
+  const prevTaskId = store.runningTimer?.taskId
+  const prevTask = prevTaskId && prevTaskId !== props.task.id ? store.tasks.find((t) => t.id === prevTaskId) : null
+  const prevLiveSeconds = prevTaskId ? taskTrackedSeconds(prevTaskId, store.timeTotals, store.runningTimer, new Date()) : 0
+  await store.startTimer(props.task.id)
+  if (prevTask) {
+    const prevStopText = prevLiveSeconds < TIMER_MIN_ENTRY_SECONDS
+      ? `Timer stopped for “${prevTask.title}” — under a minute, not recorded.`
+      : `Timer stopped for “${prevTask.title}”.`
+    announce(`${prevStopText} Timer started for “${props.task.title}”.`)
+  }
+  else announce(`Timer started for “${props.task.title}”`)
+}
+
+async function onStopTimer() {
+  const total = liveSeconds.value
+  await store.stopTimer()
+  if (total < TIMER_MIN_ENTRY_SECONDS) announce(`Timer stopped for “${props.task.title}” — under a minute, not recorded`)
+  else announce(`Timer stopped for “${props.task.title}”, ${formatDuration(total)} tracked`)
+}
+
 const metaText = computed(() => {
   const parts: string[] = [`${column.value?.name ?? 'Unknown'}.`]
   if (props.task.deadline) {
@@ -84,6 +113,8 @@ const metaText = computed(() => {
   if (blocked.value) parts.push(`${blockerTitle.value}.`)
   if (props.task.size) parts.push(`Size ${TASK_SIZE_LABELS[props.task.size]}.`)
   if (checklistTotal.value > 0) parts.push(`${checklistDone.value} of ${checklistTotal.value} sub-todos done.`)
+  if (isRunningHere.value) parts.push('Timer running.')
+  else if (liveSeconds.value > 0) parts.push(`${formatDuration(liveSeconds.value)} tracked.`)
   parts.push('Alt plus arrow keys to move.')
   return parts.join(' ')
 })
@@ -225,6 +256,21 @@ function onDelete() {
         >
           <Pencil class="size-3.5" />
         </Button>
+        <Button
+          v-if="!editingTitle"
+          type="button"
+          variant="ghost"
+          size="icon"
+          :class="isRunningHere ? 'h-6 w-auto shrink-0 gap-1 px-1.5' : 'size-6 shrink-0 text-muted-foreground hover:text-foreground'"
+          :aria-label="timerButtonLabel"
+          data-no-drag
+          @click.stop="isRunningHere ? onStopTimer() : onStartTimer()"
+        >
+          <component :is="isRunningHere ? Square : Play" class="size-3.5 shrink-0" />
+          <ClientOnly v-if="isRunningHere">
+            <span aria-hidden="true" class="tabular-nums text-xs font-medium text-primary">{{ formatClock(liveSeconds) }}</span>
+          </ClientOnly>
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="ghost" size="icon" aria-label="Task actions" data-no-drag>
@@ -234,6 +280,10 @@ function onDelete() {
           <DropdownMenuContent align="end">
             <DropdownMenuItem @click="openTask(task.id)">
               Open
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="isRunningHere ? onStopTimer() : onStartTimer()">
+              <component :is="isRunningHere ? Square : Play" class="size-3.5" />
+              {{ isRunningHere ? 'Stop timer' : 'Start timer' }}
             </DropdownMenuItem>
             <DropdownMenuItem :disabled="!canMoveUp" @click="moveWithin(-1)">
               Move up
@@ -337,6 +387,10 @@ function onDelete() {
       </template>
       <span v-if="kind === 'done' && task.completedAt">Done {{ localDateIso(new Date(task.completedAt)) }}</span>
       <span v-else-if="kind !== 'done'">{{ daysInColumn }}d in {{ column?.name ?? 'Unknown' }}</span>
+      <span v-if="!isRunningHere && liveSeconds > 0" aria-hidden="true" class="flex items-center gap-1">
+        <TimerIcon class="size-3.5 shrink-0" />
+        {{ formatDuration(liveSeconds) }}
+      </span>
     </div>
   </Card>
   <AlertDialog v-model:open="confirmOpen">

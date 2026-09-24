@@ -17,12 +17,18 @@ const searchOpen = ref(false)
 const isMobile = useMediaQuery('(max-width: 767.98px)')
 const panelOpen = computed(() => !!taskId.value)
 
-useEventListener(window, 'keydown', (e) => {
+useEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault()
     searchOpen.value = !searchOpen.value
   }
 })
+
+async function onSignOut() {
+  const { clear } = useUserSession()
+  await clear()
+  reloadNuxtApp({ path: '/login' })
+}
 
 watch(kpiOpen, (open) => {
   if (open) closeTask()
@@ -91,6 +97,7 @@ const filterValue = computed<string>({
         <span class="max-sm:sr-only">Search…</span>
         <kbd class="ml-auto hidden sm:inline text-xs">⌘K</kbd>
       </Button>
+      <RunningTimer />
       <Button class="shrink-0 max-sm:size-9 max-sm:px-0" @click="openCreate()">
         <Plus />
         <span class="max-sm:sr-only">New task</span>
@@ -112,9 +119,25 @@ const filterValue = computed<string>({
         Dismiss
       </Button>
     </div>
+    <div v-if="store.timerNotice" class="bg-muted text-foreground text-sm px-4 py-2 flex justify-between">
+      <span>{{ store.timerNotice }}</span>
+      <Button variant="ghost" size="sm" @click="store.timerNotice = null">
+        Dismiss
+      </Button>
+    </div>
     <div class="relative flex min-h-0 flex-1 overflow-clip">
       <main id="board" tabindex="-1" :inert="panelOpen && isMobile" class="min-h-0 min-w-0 flex-1 overflow-hidden outline-none">
-        <KanbanBoard />
+        <div v-if="store.loadError && !store.loaded" class="flex h-full items-center justify-center p-6">
+          <div role="alert" class="w-full max-w-sm space-y-4 rounded-lg border bg-card p-6 text-center">
+            <h2 class="text-lg font-semibold">Board unavailable</h2>
+            <p class="text-sm text-muted-foreground">{{ store.loadError }}</p>
+            <div class="flex justify-center gap-2">
+              <Button variant="outline" @click="onSignOut">Sign out</Button>
+              <Button @click="store.load()">Try again</Button>
+            </div>
+          </div>
+        </div>
+        <KanbanBoard v-else />
       </main>
       <TaskPanel />
     </div>

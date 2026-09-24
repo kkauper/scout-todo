@@ -301,3 +301,92 @@ describe('computeKpis size', () => {
     expect(kpi.size.unsizedShare).toBe(0.5)
   })
 })
+
+describe('computeKpis time', () => {
+  // Done tasks, sized, for time-tracking tests
+  const t1 = makeTask({ projectId: P1_ID, columnId: DONE_ID, completedAt: daysAgo(2), size: 'm', title: 't1' })
+  const t2 = makeTask({ projectId: P1_ID, columnId: DONE_ID, completedAt: daysAgo(1), size: 'm', title: 't2' })
+  const t3 = makeTask({ projectId: P1_ID, columnId: DONE_ID, completedAt: daysAgo(1), size: null, title: 't3 (no time)' })
+  const t4 = makeTask({ projectId: P2_ID, columnId: DONE_ID, completedAt: daysAgo(1), size: 'l', title: 't4 (out of scope)' })
+  const t5 = makeTask({ projectId: P1_ID, columnId: BACKLOG_ID, size: 'xs', title: 't5 (not done)' })
+
+  const timeTasks = [t1, t2, t3, t4, t5]
+
+  it('opts.timeEntries undefined → zeros/nulls', () => {
+    const kpi = computeKpis(timeTasks, projects, columns, NOW)
+    expect(kpi.time.last30DaysSeconds).toBe(0)
+    expect(kpi.time.trackedDoneTasks).toBe(0)
+    expect(kpi.time.doneTasksWithoutTime).toBe(0)
+    for (const size of ['xs', 's', 'm', 'l', 'xl', 'none'] as const) {
+      expect(kpi.time.avgDoneSecondsBySize[size]).toBeNull()
+    }
+  })
+
+  it('window clipping: entry spanning the 30-day boundary counts only the part inside the window', () => {
+    // Entry starts 31 days ago (before the window), ends 29 days ago (inside the window, endedAt > from30).
+    // Only the part from the window start (30 days ago) to endedAt (29 days ago) counts: 1 day.
+    const entries = [
+      { taskId: t1.id, startedAt: daysAgo(31), endedAt: daysAgo(29) },
+    ]
+    const kpi = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: entries })
+    expect(kpi.time.last30DaysSeconds).toBe(1 * 86_400)
+  })
+
+  it('entry entirely before the window (endedAt <= from30) is excluded', () => {
+    const entries = [
+      { taskId: t1.id, startedAt: daysAgo(40), endedAt: daysAgo(31) },
+    ]
+    const kpi = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: entries })
+    expect(kpi.time.last30DaysSeconds).toBe(0)
+  })
+
+  it('entry fully inside the window counts in full', () => {
+    const entries = [
+      { taskId: t1.id, startedAt: daysAgo(5), endedAt: daysAgo(4) },
+    ]
+    const kpi = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: entries })
+    expect(kpi.time.last30DaysSeconds).toBe(1 * 86_400)
+  })
+
+  it('scope filtering: entries for out-of-scope tasks are ignored', () => {
+    const entries = [
+      { taskId: t1.id, startedAt: daysAgo(2), endedAt: daysAgo(1) }, // in scope (P1)
+      { taskId: t4.id, startedAt: daysAgo(2), endedAt: daysAgo(1) }, // out of scope when filtered to P1
+    ]
+    const global = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: entries })
+    expect(global.time.last30DaysSeconds).toBe(2 * 86_400)
+
+    const scopedToP1 = computeKpis(timeTasks, projects, columns, NOW, { projectId: P1_ID, timeEntries: entries })
+    expect(scopedToP1.time.last30DaysSeconds).toBe(1 * 86_400)
+  })
+
+  it('avgDoneSecondsBySize: averages per size incl. none; null when no such task; doneTasksWithoutTime counts 0-tracked done tasks', () => {
+    const entries = [
+      { taskId: t1.id, startedAt: daysAgo(3), endedAt: daysAgo(2) }, // t1 (size m): 1 day
+      { taskId: t2.id, startedAt: daysAgo(2), endedAt: daysAgo(1) }, // t2 (size m): 1 day
+      // t3 (size none): no entries → doneTasksWithoutTime
+      { taskId: t4.id, startedAt: daysAgo(2), endedAt: daysAgo(1) }, // t4 (size l, project P2)
+    ]
+    const kpi = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: entries })
+
+    expect(kpi.time.avgDoneSecondsBySize.m).toBe(1 * 86_400)
+    expect(kpi.time.avgDoneSecondsBySize.l).toBe(1 * 86_400)
+    expect(kpi.time.avgDoneSecondsBySize.xs).toBeNull()
+    expect(kpi.time.avgDoneSecondsBySize.s).toBeNull()
+    expect(kpi.time.avgDoneSecondsBySize.xl).toBeNull()
+    expect(kpi.time.avgDoneSecondsBySize.none).toBeNull() // t3 has 0 tracked time → not counted in average
+
+    expect(kpi.time.trackedDoneTasks).toBe(3) // t1, t2, t4
+    expect(kpi.time.doneTasksWithoutTime).toBe(1) // t3
+  })
+
+  it('no-entries case: opts.timeEntries = [] → zeros/nulls, no crash', () => {
+    const kpi = computeKpis(timeTasks, projects, columns, NOW, { timeEntries: [] })
+    expect(kpi.time.last30DaysSeconds).toBe(0)
+    expect(kpi.time.trackedDoneTasks).toBe(0)
+    expect(kpi.time.doneTasksWithoutTime).toBe(4) // t1, t2, t3, t4 done with no tracked time
+    for (const size of ['xs', 's', 'm', 'l', 'xl', 'none'] as const) {
+      expect(kpi.time.avgDoneSecondsBySize[size]).toBeNull()
+    }
+  })
+})

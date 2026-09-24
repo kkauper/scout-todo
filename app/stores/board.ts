@@ -1,10 +1,11 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { BoardColumn, BoardData, ChecklistItem, ColorKey, ColumnKind, Project, StateEvent, Tag, Task, TaskLink, TaskLinkType, TaskSize } from '#shared/types/domain'
-import { COLOR_KEYS } from '#shared/types/domain'
+import type { BoardColumn, BoardData, ChecklistItem, ColorKey, ColumnKind, Project, RunningTimer, StateEvent, Tag, Task, TaskLink, TaskLinkType, TaskSize, TimeEntry, TimerState } from '#shared/types/domain'
+import { COLOR_KEYS, TIMER_MIN_ENTRY_SECONDS } from '#shared/types/domain'
 import { transitionPatch } from '#shared/utils/transitions'
 import { positionAtIndex, positionBetween } from '#shared/utils/position'
 import { adjacentColumnId, withinColumnTargetIndex } from '#shared/utils/reorder'
+import { durationSeconds } from '#shared/utils/timer'
 
 export const useBoardStore = defineStore('board', () => {
   const requestFetch = useRequestFetch()
@@ -18,6 +19,10 @@ export const useBoardStore = defineStore('board', () => {
   const loaded = ref(false)
   const revision = ref(0)
   const lastError = ref<string | null>(null)
+  const loadError = ref<string | null>(null)
+  const runningTimer = ref<RunningTimer | null>(null)
+  const timeTotals = ref<Record<string, number>>({})
+  const timerNotice = ref<string | null>(null)
 
   const projectById = computed<Map<string, Project>>(() => new Map(projects.value.map((p) => [p.id, p])))
   const tagById = computed<Map<string, Tag>>(() => new Map(tags.value.map((t) => [t.id, t])))
@@ -48,16 +53,24 @@ export const useBoardStore = defineStore('board', () => {
       tasks.value = data.tasks
       columns.value = data.columns
       links.value = data.links
+      runningTimer.value = data.runningTimer
+      timeTotals.value = data.timeTotals
       loaded.value = true
+      loadError.value = null
+      if (data.timerStaleClosed) setStaleNotice(data.timerStaleClosed)
     }
     catch (e) {
-      if (import.meta.client && isUnauthorized(e)) {
-        const { clear } = useUserSession()
-        await clear()
-        reloadNuxtApp({ path: '/login' })
+      if (isUnauthorized(e)) {
+        if (import.meta.client) {
+          const { clear } = useUserSession()
+          await clear()
+          reloadNuxtApp({ path: '/login' })
+          return
+        }
+        loadError.value = 'Session expired'
         return
       }
-      throw e
+      loadError.value = 'Couldn\'t load the board. The server returned an error.'
     }
   }
 
@@ -90,6 +103,81 @@ export const useBoardStore = defineStore('board', () => {
     }
   }
 
+  function setStaleNotice(s: { taskId: string; endedAt: string; discarded: boolean }) {
+    const title = tasks.value.find((t) => t.id === s.taskId)?.title ?? 'Unknown task'
+    if (s.discarded) {
+      timerNotice.value = `Timer for “${title}” stopped — no activity (computer asleep or browser closed). It ran less than a minute, so nothing was recorded.`
+      return
+    }
+    const time = new Date(s.endedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    timerNotice.value = `Timer for “${title}” stopped at ${time} — no activity (computer asleep or browser closed). Add missing time in the task if needed.`
+  }
+
+  function applyTimerState(state: TimerState) {
+    runningTimer.value = state.running
+    if (state.staleClosed) setStaleNotice(state.staleClosed)
+  }
+
+  async function startTimer(taskId: string) {
+    const prev = runningTimer.value
+    const now = new Date()
+    if (prev && prev.taskId !== taskId) {
+      const liveSeconds = Math.max(0, (now.getTime() - new Date(prev.startedAt).getTime()) / 1000)
+      if (liveSeconds >= TIMER_MIN_ENTRY_SECONDS) {
+        timeTotals.value[prev.taskId] = (timeTotals.value[prev.taskId] ?? 0) + liveSeconds
+      }
+    }
+    runningTimer.value = { entryId: 'pending', taskId, startedAt: now.toISOString(), lastSeenAt: now.toISOString() }
+
+    const result = await run(() => $fetch<TimerState>(`/api/tasks/${taskId}/timer`, { method: 'POST' }))
+    if (result) applyTimerState(result)
+  }
+
+  async function stopTimer() {
+    const prev = runningTimer.value
+    if (prev) {
+      const now = new Date()
+      const liveSeconds = Math.max(0, (now.getTime() - new Date(prev.startedAt).getTime()) / 1000)
+      if (liveSeconds >= TIMER_MIN_ENTRY_SECONDS) {
+        timeTotals.value[prev.taskId] = (timeTotals.value[prev.taskId] ?? 0) + liveSeconds
+      }
+    }
+    runningTimer.value = null
+
+    const result = await run(() => $fetch<TimerState>('/api/timer', { method: 'DELETE' }))
+    if (result) applyTimerState(result)
+  }
+
+  async function heartbeat() {
+    try {
+      const result = await $fetch<TimerState>('/api/timer/heartbeat', { method: 'POST' })
+      applyTimerState(result)
+    }
+    catch {
+      // ignore network errors; the next heartbeat retries
+    }
+  }
+
+  async function addTime(taskId: string, minutes: number): Promise<TimeEntry | undefined> {
+    const result = await run(() => $fetch<TimeEntry>(`/api/tasks/${taskId}/time-entries`, {
+      method: 'POST',
+      body: { minutes },
+    }))
+    if (result) timeTotals.value[taskId] = (timeTotals.value[taskId] ?? 0) + minutes * 60
+    return result
+  }
+
+  async function deleteTimeEntry(entry: TimeEntry) {
+    const result = await run(() => $fetch(`/api/time-entries/${entry.id}`, { method: 'DELETE' }))
+    if (result === undefined) return
+    const seconds = entry.endedAt ? durationSeconds(entry.startedAt, entry.endedAt) : 0
+    timeTotals.value[entry.taskId] = Math.max(0, (timeTotals.value[entry.taskId] ?? 0) - seconds)
+  }
+
+  async function fetchTimeEntries(taskId: string): Promise<TimeEntry[]> {
+    return await $fetch<TimeEntry[]>(`/api/tasks/${taskId}/time-entries`)
+  }
+
   function upsertTask(t: Task) {
     const index = tasks.value.findIndex((existing) => existing.id === t.id)
     if (index === -1) tasks.value.push(t)
@@ -114,6 +202,15 @@ export const useBoardStore = defineStore('board', () => {
       task.completedAt = patch.completedAt
     }
     task.updatedAt = now.toISOString()
+
+    if (toColumn.kind === 'done' && runningTimer.value?.taskId === id) {
+      const prev = runningTimer.value
+      const liveSeconds = Math.max(0, (now.getTime() - new Date(prev.startedAt).getTime()) / 1000)
+      if (liveSeconds >= TIMER_MIN_ENTRY_SECONDS) {
+        timeTotals.value[id] = (timeTotals.value[id] ?? 0) + liveSeconds
+      }
+      runningTimer.value = null
+    }
 
     const result = await run(() => $fetch<Task>(`/api/tasks/${id}/move`, {
       method: 'POST',
@@ -362,6 +459,10 @@ export const useBoardStore = defineStore('board', () => {
     loaded,
     revision,
     lastError,
+    loadError,
+    runningTimer,
+    timeTotals,
+    timerNotice,
     projectById,
     tagById,
     columnById,
@@ -377,6 +478,14 @@ export const useBoardStore = defineStore('board', () => {
     createTask,
     updateTask,
     deleteTask,
+    setStaleNotice,
+    applyTimerState,
+    startTimer,
+    stopTimer,
+    heartbeat,
+    addTime,
+    deleteTimeEntry,
+    fetchTimeEntries,
     addLink,
     removeLink,
     convertChecklistItem,

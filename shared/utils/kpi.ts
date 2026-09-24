@@ -1,6 +1,7 @@
 import type { BoardColumn, ColorKey, ColumnKind, Project, Task, TaskSize } from '../types/domain'
 import { COLUMN_KINDS, TASK_SIZES, TASK_SIZE_WEIGHTS } from '../types/domain'
 import { daysBetween, localDateIso } from './dates'
+import { durationSeconds } from './timer'
 
 export interface KpiReport {
   generatedAt: string
@@ -32,6 +33,12 @@ export interface KpiReport {
     doneLast30Weight: number
     wipWeight: number
     unsizedShare: number | null
+  }
+  time: {
+    last30DaysSeconds: number
+    avgDoneSecondsBySize: Record<TaskSize | 'none', number | null>
+    trackedDoneTasks: number
+    doneTasksWithoutTime: number
   }
 }
 
@@ -77,7 +84,11 @@ export function computeKpis(
   projects: Project[],
   columns: BoardColumn[],
   now: Date,
-  opts?: { projectId?: string | null | 'none'; weeks?: number },
+  opts?: {
+    projectId?: string | null | 'none'
+    weeks?: number
+    timeEntries?: { taskId: string; startedAt: string; endedAt: string }[]
+  },
 ): KpiReport {
   const projectIdOpt = opts?.projectId
   const weeks = opts?.weeks ?? 8
@@ -185,6 +196,56 @@ export function computeKpis(
   const unsizedNotDone = sizeOpen.none + sizeWip.none
   const unsizedShare = notDoneCount > 0 ? unsizedNotDone / notDoneCount : null
 
+  let last30DaysSeconds = 0
+  const avgDoneSecondsBySize = {} as Record<TaskSize | 'none', number | null>
+  for (const s of TASK_SIZES) avgDoneSecondsBySize[s] = null
+  avgDoneSecondsBySize.none = null
+  let trackedDoneTasks = 0
+  let doneTasksWithoutTime = 0
+
+  if (opts?.timeEntries) {
+    const scopedTaskIds = new Set(scoped.map(t => t.id))
+    const scopedEntries = opts.timeEntries.filter(e => scopedTaskIds.has(e.taskId))
+
+    let last30Seconds = 0
+    for (const e of scopedEntries) {
+      const ended = new Date(e.endedAt)
+      if (ended <= from30 || ended > now) continue
+      const started = new Date(e.startedAt)
+      const clippedStart = started < from30 ? from30 : started
+      last30Seconds += Math.max(0, (ended.getTime() - clippedStart.getTime()) / 1000)
+    }
+    last30DaysSeconds = Math.round(last30Seconds)
+
+    const totalsByTask = new Map<string, number>()
+    for (const e of scopedEntries) {
+      totalsByTask.set(e.taskId, (totalsByTask.get(e.taskId) ?? 0) + durationSeconds(e.startedAt, e.endedAt))
+    }
+
+    const sumBySize = new Map<TaskSize | 'none', number>()
+    const countBySize = new Map<TaskSize | 'none', number>()
+
+    for (const t of scoped) {
+      if (kindOf(t) !== 'done') continue
+      const tracked = totalsByTask.get(t.id) ?? 0
+      if (tracked > 0) {
+        trackedDoneTasks++
+        const key = t.size ?? 'none'
+        sumBySize.set(key, (sumBySize.get(key) ?? 0) + tracked)
+        countBySize.set(key, (countBySize.get(key) ?? 0) + 1)
+      }
+      else {
+        doneTasksWithoutTime++
+      }
+    }
+
+    const allSizes: (TaskSize | 'none')[] = [...TASK_SIZES, 'none']
+    for (const s of allSizes) {
+      const count = countBySize.get(s) ?? 0
+      avgDoneSecondsBySize[s] = count > 0 ? Math.round((sumBySize.get(s) ?? 0) / count) : null
+    }
+  }
+
   const oldest = scoped
     .filter(t => kindOf(t) !== 'done')
     .map(t => ({
@@ -246,6 +307,12 @@ export function computeKpis(
       doneLast30Weight,
       wipWeight,
       unsizedShare,
+    },
+    time: {
+      last30DaysSeconds,
+      avgDoneSecondsBySize,
+      trackedDoneTasks,
+      doneTasksWithoutTime,
     },
   }
 }

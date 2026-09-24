@@ -57,6 +57,10 @@ export default defineEventHandler(async (event) => {
       })
     }
 
+    if (toColumn.kind === 'done') {
+      await stopRunningTimer(tx, userId, now, { taskId: id })
+    }
+
     return { fromColumnId: row.columnId, toKind: toColumn.kind, patched: !!patch }
   })
 

@@ -115,6 +115,20 @@ export const taskLinks = pgTable('task_links', {
   check('task_links_no_self', sql`${t.fromTaskId} <> ${t.toTaskId}`),
 ])
 
+export const timeEntries = pgTable('time_entries', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
+  endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, (t) => [
+  index('time_entries_task_id_idx').on(t.taskId),
+  uniqueIndex('time_entries_one_running_per_user').on(t.userId).where(sql`${t.endedAt} IS NULL`),
+  check('time_entries_end_after_start', sql`${t.endedAt} IS NULL OR ${t.endedAt} >= ${t.startedAt}`),
+])
+
 export const taskStateEvents = pgTable('task_state_events', {
   id: uuid('id').primaryKey().defaultRandom(),
   taskId: uuid('task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
@@ -131,6 +145,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   tags: many(tags),
   boardColumns: many(boardColumns),
   tasks: many(tasks),
+  timeEntries: many(timeEntries),
 }))
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
@@ -157,6 +172,7 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   checklistItems: many(checklistItems),
   linksFrom: many(taskLinks, { relationName: 'linksFrom' }),
   linksTo: many(taskLinks, { relationName: 'linksTo' }),
+  timeEntries: many(timeEntries),
 }))
 
 export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
@@ -177,4 +193,9 @@ export const taskStateEventsRelations = relations(taskStateEvents, ({ one }) => 
   task: one(tasks, { fields: [taskStateEvents.taskId], references: [tasks.id] }),
   fromColumn: one(boardColumns, { fields: [taskStateEvents.fromColumnId], references: [boardColumns.id], relationName: 'fromColumnEvents' }),
   toColumn: one(boardColumns, { fields: [taskStateEvents.toColumnId], references: [boardColumns.id], relationName: 'toColumnEvents' }),
+}))
+
+export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
+  user: one(users, { fields: [timeEntries.userId], references: [users.id] }),
+  task: one(tasks, { fields: [timeEntries.taskId], references: [tasks.id] }),
 }))

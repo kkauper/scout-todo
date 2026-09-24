@@ -354,6 +354,8 @@ function revealCard(id: string) {
         <AiSubtaskSuggestions ref="subtaskAi" :title="titleDraft" :description="descriptionDraft" @add="onAddSuggested" />
       </div>
 
+      <TaskTime :task-id="task.id" />
+
       <TaskLinks :task-id="task.id" />
 
       <div class="space-y-2">

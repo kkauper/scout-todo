@@ -233,12 +233,9 @@ describe('multi-user isolation', () => {
     const ok = await api(bobCookie, 'POST', '/api/auth/password', { currentPassword: PASSWORD, newPassword: NEW_BOB_PASSWORD })
     expect(ok.status).toBe(200)
 
-    const res = await fetch(`${BASE}/api/auth/login`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: bobUsername, password: NEW_BOB_PASSWORD }),
-    })
-    expect(res.status).toBe(200)
+    // The password change revokes Bob's existing sessions (session_version bump), so later
+    // tests must continue with a fresh cookie. login() throws unless the new password works.
+    bobCookie = await login(bobUsername, NEW_BOB_PASSWORD)
   })
 
   it('9. task link and checklist-convert isolation', async () => {
@@ -264,6 +261,31 @@ describe('multi-user isolation', () => {
   it('10. alice\'s board is unchanged by any of the above', async () => {
     const { json } = await api(aliceCookie, 'GET', '/api/board')
     expect(json).toEqual(aliceBoardSnapshot)
+  })
+
+  it('11. timer isolation: foreign task 404s, running timer never leaks into another user\'s board', async () => {
+    const startForeign = await api(bobCookie, 'POST', `/api/tasks/${aliceTaskId}/timer`)
+    expect(startForeign.status).toBe(404)
+
+    const listForeign = await api(bobCookie, 'GET', `/api/tasks/${aliceTaskId}/time-entries`)
+    expect(listForeign.status).toBe(404)
+
+    const addForeign = await api(bobCookie, 'POST', `/api/tasks/${aliceTaskId}/time-entries`, { minutes: 5 })
+    expect(addForeign.status).toBe(404)
+
+    const aliceStart = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/timer`)
+    expect(aliceStart.status).toBe(200)
+    const aliceEntryId = aliceStart.json.running.entryId
+
+    const deleteForeignEntry = await api(bobCookie, 'DELETE', `/api/time-entries/${aliceEntryId}`)
+    expect(deleteForeignEntry.status).toBe(404)
+
+    const bobBoard = await api(bobCookie, 'GET', '/api/board')
+    expect(bobBoard.json.runningTimer).toBeNull()
+    expect(bobBoard.json.timeTotals[aliceTaskId]).toBeUndefined()
+
+    const stopAlice = await api(aliceCookie, 'DELETE', '/api/timer')
+    expect(stopAlice.status).toBe(200)
   })
 })
 
