@@ -136,10 +136,12 @@ async function main() {
 
   if (reset) {
     await db.delete(schema.tasks).where(eq(schema.tasks.userId, ownerId))
-    await db.delete(schema.boardColumns).where(eq(schema.boardColumns.userId, ownerId))
-    await db.delete(schema.tags).where(eq(schema.tags.userId, ownerId))
-    await db.delete(schema.projects).where(eq(schema.projects.userId, ownerId))
   }
+  // No tasks left at this point. Migrations already created default columns for the owner,
+  // so clear them (and any leftover projects/tags) instead of seeding a second set.
+  await db.delete(schema.boardColumns).where(eq(schema.boardColumns.userId, ownerId))
+  await db.delete(schema.tags).where(eq(schema.tags.userId, ownerId))
+  await db.delete(schema.projects).where(eq(schema.projects.userId, ownerId))
 
   const projectRows = await db.insert(schema.projects).values(PROJECTS.map(p => ({ ...p, userId: ownerId }))).returning()
   const tagRows = await db.insert(schema.tags).values(TAGS.map(t => ({ ...t, userId: ownerId }))).returning()
