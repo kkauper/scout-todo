@@ -4,3 +4,8 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - dotenv@18.0.3
+overrides:
+  decode-uri-component: ^0.5.0
+  '@esbuild-kit/core-utils>esbuild': ^0.25.0
+patchedDependencies:
+  source-map-resolve@0.6.0: patches/source-map-resolve@0.6.0.patch

@@ -284,6 +284,8 @@ wrangler.jsonc               Cloudflare Worker config
 
 **Workflow**: Claude Code agents and automation live in `CLAUDE.md` and `.claude/agents/`.
 
+**Dependency overrides**: `pnpm-workspace.yaml` pins `decode-uri-component` and `@esbuild-kit/core-utils>esbuild` to patched versions (transitive deps of `shadcn-vue`/`vite` and `drizzle-kit`), and `patches/source-map-resolve@0.6.0.patch` fixes `source-map-resolve` calling the now-ESM-only `decode-uri-component` as a CJS function under Node 24 `require(esm)`. Don't remove these without re-checking the dependency tree (`pnpm why decode-uri-component` / `pnpm why esbuild`) for reintroduced vulnerable versions.
+
 ## License
 
 MIT © 2026 Kai Kauper — see [LICENSE](LICENSE).

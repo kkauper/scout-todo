@@ -1,0 +1,12 @@
+diff --git a/index.js b/index.js
+index 66bb638..ff8009d 100644
+--- a/index.js
++++ b/index.js
+@@ -2,6 +2,7 @@ var atob = require("atob")
+ var urlLib = require("url")
+ var pathLib = require("path")
+ var decodeUriComponentLib = require("decode-uri-component")
++decodeUriComponentLib = decodeUriComponentLib.default || decodeUriComponentLib
+ 
+ 
+ 
