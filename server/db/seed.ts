@@ -2,7 +2,8 @@ import 'dotenv/config'
 import { eq, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
-import { DEFAULT_COLUMNS } from '../../shared/types/domain'
+import { DEFAULT_COLUMNS, TASK_SIZES } from '../../shared/types/domain'
+import type { TaskLinkType, TaskSize } from '../../shared/types/domain'
 import { localDateIso } from '../../shared/utils/dates'
 import * as schema from './schema'
 
@@ -113,6 +114,7 @@ interface PlannedTask {
   completedAt: Date | null
   stateChangedAt: Date
   tagIds: string[]
+  size: TaskSize | null
 }
 
 async function main() {
@@ -135,6 +137,10 @@ async function main() {
   }
 
   if (reset) {
+    // time_entries reference the owner directly (user_id), so clear them explicitly first.
+    // task_links only reference tasks (from/to, both onDelete: 'cascade'), so deleting the
+    // owner's tasks below cascades and clears them too — verified against server/db/schema.ts.
+    await db.delete(schema.timeEntries).where(eq(schema.timeEntries.userId, ownerId))
     await db.delete(schema.tasks).where(eq(schema.tasks.userId, ownerId))
   }
   // No tasks left at this point. Migrations already created default columns for the owner,
@@ -264,7 +270,17 @@ async function main() {
     const tagCount = rng() < 0.15 ? 0 : randInt(1, 2)
     const tagIds = shuffle(tagRows.map(t => t.id)).slice(0, tagCount)
 
-    planned.push({ title, finalColumnIdx: finalIdx, projectId, deadline, createdAt, events, completedAt, stateChangedAt, tagIds })
+    // Leave ~20% of tasks unsized so the "Unsized open work" / "Unsized" KPI rows have data too.
+    const size: TaskSize | null = rng() < 0.2 ? null : pick(TASK_SIZES)
+
+    planned.push({ title, finalColumnIdx: finalIdx, projectId, deadline, createdAt, events, completedAt, stateChangedAt, tagIds, size })
+  }
+
+  // Guarantee one "In progress" task is sized, so the screenshot script can reliably find an
+  // active task with size, links and tracked time for the board deep-link shot.
+  const demoPlannedIdx = planned.findIndex(p => p.finalColumnIdx === 2)
+  if (demoPlannedIdx !== -1) {
+    planned[demoPlannedIdx]!.size = 'm'
   }
 
   const positionCounters: number[] = [0, 0, 0, 0, 0]
@@ -289,6 +305,7 @@ async function main() {
         columnId: columnRow.id,
         position: counter,
         deadline: p.deadline,
+        size: p.size,
         createdAt: p.createdAt,
         updatedAt: p.stateChangedAt,
         stateChangedAt: p.stateChangedAt,
@@ -336,13 +353,14 @@ async function main() {
     'Ping stakeholders',
   ]
 
-  // Guarantee at least 3 open/active tasks get a checklist with a mix of done and undone items,
-  // so the card checklist progress indicator is visible on the board without relying on chance.
-  const openActiveTaskIdx = insertedTasks
+  // Guarantee at least 3 active (In progress / Review) tasks get a checklist with a mix of done
+  // and undone items, so the card checklist progress indicator is visible on the board without
+  // relying on chance.
+  const activeTaskIdx = insertedTasks
     .map((t, i) => ({ t, i }))
-    .filter(x => x.t.finalColumnIdx !== DONE_COLUMN_IDX)
+    .filter(x => x.t.finalColumnIdx === 2 || x.t.finalColumnIdx === 3)
     .map(x => x.i)
-  const guaranteedMixedIdx = shuffle(openActiveTaskIdx).slice(0, Math.min(3, openActiveTaskIdx.length))
+  const guaranteedMixedIdx = shuffle(activeTaskIdx).slice(0, Math.min(3, activeTaskIdx.length))
   const remainingPool = insertedTasks.map((_, i) => i).filter(i => !guaranteedMixedIdx.includes(i))
   const extraChecklistIdx = shuffle(remainingPool).slice(0, Math.max(0, 8 - guaranteedMixedIdx.length))
   const checklistTaskIdx = [...guaranteedMixedIdx, ...extraChecklistIdx]
@@ -385,9 +403,97 @@ async function main() {
     checklistItemCount += values.length
   }
 
+  // Task links: a handful of links between seeded tasks so the board shows a blocked badge,
+  // related tasks and a duplicate marker. `relates` links respect the canonical ordering from
+  // shared/utils/links.ts (normalizeLink): fromTaskId < toTaskId.
+  const demoTaskId = demoPlannedIdx !== -1 ? (insertedTasks[demoPlannedIdx] as (typeof insertedTasks)[number]).id : null
+  const nonDoneTasks = insertedTasks.filter(t => t.finalColumnIdx !== DONE_COLUMN_IDX)
+
+  interface PlannedLink { fromTaskId: string; toTaskId: string; type: TaskLinkType }
+  const plannedLinks: PlannedLink[] = []
+
+  // 2-3 "blocks" links where the blocker is not done, so the blocked task shows the blocked icon.
+  const blocksPool = shuffle(nonDoneTasks)
+  const blocksCount = Math.min(randInt(2, 3), Math.floor(blocksPool.length / 2))
+  for (let i = 0; i < blocksCount; i++) {
+    const blocker = blocksPool[i * 2] as (typeof insertedTasks)[number]
+    const blocked = blocksPool[i * 2 + 1] as (typeof insertedTasks)[number]
+    plannedLinks.push({ fromTaskId: blocker.id, toTaskId: blocked.id, type: 'blocks' })
+  }
+
+  // 2 "relates" links. Guarantee the demo (In progress) task is one endpoint of the first, so
+  // GET /api/board reliably yields an active task with size, links and tracked time.
+  const relatesOthers = shuffle(insertedTasks.filter(t => t.id !== demoTaskId))
+  const relatesPairs: [string, string][] = []
+  if (demoTaskId && relatesOthers[0]) {
+    relatesPairs.push([demoTaskId, relatesOthers[0].id])
+    if (relatesOthers[1] && relatesOthers[2]) relatesPairs.push([relatesOthers[1].id, relatesOthers[2].id])
+  }
+  else if (relatesOthers[0] && relatesOthers[1] && relatesOthers[2] && relatesOthers[3]) {
+    relatesPairs.push([relatesOthers[0].id, relatesOthers[1].id])
+    relatesPairs.push([relatesOthers[2].id, relatesOthers[3].id])
+  }
+  for (const [a, b] of relatesPairs) {
+    const normalized = a < b ? { fromTaskId: a, toTaskId: b } : { fromTaskId: b, toTaskId: a }
+    plannedLinks.push({ ...normalized, type: 'relates' })
+  }
+
+  // 1 "duplicates" link.
+  const dupPool = shuffle(insertedTasks)
+  if (dupPool[0] && dupPool[1]) {
+    plannedLinks.push({ fromTaskId: dupPool[0].id, toTaskId: dupPool[1].id, type: 'duplicates' })
+  }
+
+  if (plannedLinks.length > 0) {
+    await db.insert(schema.taskLinks).values(plannedLinks)
+  }
+
+  // Time entries: finished sessions spread over the last 6 weeks for most done tasks and some
+  // active tasks, so the "Tracked (30d)" and "Avg per done task by size" KPIs have data. The demo
+  // task above is guaranteed to have tracked time too (see screenshot script requirements).
+  const SIX_WEEKS_MS = 42 * DAY
+  const sixWeeksAgo = new Date(now.getTime() - SIX_WEEKS_MS)
+
+  const doneTasksList = insertedTasks.filter(t => t.finalColumnIdx === DONE_COLUMN_IDX)
+  const activeTasksList = insertedTasks.filter(t => t.finalColumnIdx === 2 || t.finalColumnIdx === 3)
+
+  const doneWithTime = shuffle(doneTasksList).slice(0, Math.ceil(doneTasksList.length * 0.8))
+  const activeWithTimeIds = new Set(shuffle(activeTasksList).slice(0, Math.ceil(activeTasksList.length * 0.5)).map(t => t.id))
+  if (demoTaskId) activeWithTimeIds.add(demoTaskId)
+  const activeWithTime = activeTasksList.filter(t => activeWithTimeIds.has(t.id))
+
+  interface PlannedTimeEntry { userId: string; taskId: string; startedAt: Date; endedAt: Date; lastSeenAt: Date }
+  const plannedTimeEntries: PlannedTimeEntry[] = []
+
+  function addTimeEntries(task: (typeof insertedTasks)[number], windowEnd: Date): void {
+    const windowStart = new Date(Math.max(sixWeeksAgo.getTime(), task.createdAt.getTime()))
+    if (windowStart.getTime() >= windowEnd.getTime()) return
+    const entryCount = randInt(1, 4)
+    for (let i = 0; i < entryCount; i++) {
+      const durationSeconds = randInt(5 * 60, 3 * 60 * 60)
+      const latestStart = windowEnd.getTime() - durationSeconds * 1000
+      if (latestStart <= windowStart.getTime()) continue
+      const startedAt = new Date(randFloat(windowStart.getTime(), latestStart))
+      const endedAt = new Date(startedAt.getTime() + durationSeconds * 1000)
+      plannedTimeEntries.push({ userId: ownerId, taskId: task.id, startedAt, endedAt, lastSeenAt: endedAt })
+    }
+  }
+
+  for (const task of doneWithTime) {
+    addTimeEntries(task, task.completedAt ?? now)
+  }
+  for (const task of activeWithTime) {
+    addTimeEntries(task, now)
+  }
+
+  if (plannedTimeEntries.length > 0) {
+    await db.insert(schema.timeEntries).values(plannedTimeEntries)
+  }
+
   console.log(
     `Seeded ${projectRows.length} projects, ${tagRows.length} tags, ${columnRows.length} columns, ${planned.length} tasks, `
-    + `${taskTagCount} task-tag links, ${eventCount} state events, ${checklistItemCount} checklist items.`,
+    + `${taskTagCount} task-tag links, ${eventCount} state events, ${checklistItemCount} checklist items, `
+    + `${plannedLinks.length} task links, ${plannedTimeEntries.length} time entries.`,
   )
   console.log('Seeded as "owner". Set a password with: pnpm user:passwd owner')
 

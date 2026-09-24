@@ -23,7 +23,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:isolation": "vitest run --config vitest.integration.config.ts",
-    "typecheck": "nuxi typecheck"
+    "typecheck": "nuxi typecheck",
+    "screenshots": "tsx scripts/screenshots.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
@@ -59,6 +60,7 @@
     "dotenv": "^18.0.3",
     "drizzle-kit": "^0.31.11",
     "esbuild": ">=0.25.0",
+    "playwright": "^1.63.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
