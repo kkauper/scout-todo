@@ -9,14 +9,7 @@ const bodySchema = z.object({
 export default defineEventHandler(async (event) => {
   const body = await readValidatedBody(event, bodySchema.parse)
 
-  const limiter = (event.context.cloudflare?.env as { LOGIN_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> } } | undefined)?.LOGIN_LIMITER
-  if (limiter) {
-    const key = getRequestHeader(event, 'cf-connecting-ip') ?? 'unknown'
-    const { success } = await limiter.limit({ key })
-    if (!success) {
-      throw createError({ statusCode: 429, statusMessage: 'Too many login attempts. Try again in a minute.' })
-    }
-  }
+  await enforceRateLimit(event, 'LOGIN_LIMITER', getRequestHeader(event, 'cf-connecting-ip') ?? 'unknown', 'Too many login attempts. Try again in a minute.')
 
   const username = body.username.trim().toLowerCase()
   const [user] = await useDb().select().from(schema.users).where(eq(schema.users.username, username))

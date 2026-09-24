@@ -2,11 +2,9 @@ import { eq } from 'drizzle-orm'
 import type { H3Event } from 'h3'
 import Anthropic from '@anthropic-ai/sdk'
 
-const CLAUDE_MODEL = 'claude-opus-5'
-
 export async function getUserAnthropicKey(event: H3Event): Promise<string | null> {
   const config = useRuntimeConfig(event)
-  if (!config.encryptionKey) return null
+  if (!config.encryptionKey || config.encryptionKey.length < 32) return null
 
   const userId = await requireUserId(event)
   const db = useDb()
@@ -16,7 +14,7 @@ export async function getUserAnthropicKey(event: H3Event): Promise<string | null
     .where(eq(schema.users.id, userId))
 
   if (!user?.anthropicApiKey) return null
-  return decryptSecret(user.anthropicApiKey, config.encryptionKey)
+  return decryptSecret(user.anthropicApiKey, config.encryptionKey, userId)
 }
 
 async function claudeChat(apiKey: string, input: {
@@ -26,19 +24,14 @@ async function claudeChat(apiKey: string, input: {
 }): Promise<string> {
   const client = new Anthropic({ apiKey })
 
-  let response: Anthropic.Beta.BetaMessage
+  let response: Anthropic.Message
   try {
-    response = await client.beta.messages.create({
+    response = await client.messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
       system: input.system,
       messages: [{ role: 'user', content: input.user }],
-      output_config: {
-        effort: 'low',
-        ...(input.schema ? { format: { type: 'json_schema' as const, schema: input.schema } } : {}),
-      },
+      ...(input.schema ? { output_config: { format: { type: 'json_schema' as const, schema: input.schema } } } : {}),
     })
   }
   catch (error) {
@@ -66,7 +59,7 @@ async function claudeChat(apiKey: string, input: {
   }
 
   return response.content
-    .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === 'text')
+    .filter((block): block is Anthropic.TextBlock => block.type === 'text')
     .map(block => block.text)
     .join('')
 }
@@ -77,6 +70,9 @@ export async function aiChat(event: H3Event, input: {
   schema?: Record<string, unknown>
   temperature?: number
 }): Promise<string> {
+  const userId = await requireUserId(event)
+  await enforceRateLimit(event, 'AI_LIMITER', `ai:${userId}`, 'Too many AI requests. Try again in a minute.')
+
   const apiKey = await getUserAnthropicKey(event)
   if (apiKey) {
     return claudeChat(apiKey, { system: input.system, user: input.user, schema: input.schema })

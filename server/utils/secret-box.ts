@@ -1,4 +1,4 @@
-const PREFIX = 'v1'
+const PREFIX = 'v2'
 
 function toBase64Url(bytes: Uint8Array): string {
   let binary = ''
@@ -28,18 +28,19 @@ async function deriveAesKey(keyMaterial: string): Promise<CryptoKey> {
   return globalThis.crypto.subtle.importKey('raw', digest, 'AES-GCM', false, ['encrypt', 'decrypt'])
 }
 
-export async function encryptSecret(plain: string, keyMaterial: string): Promise<string> {
+export async function encryptSecret(plain: string, keyMaterial: string, context: string): Promise<string> {
   const key = await deriveAesKey(keyMaterial)
   const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
   const ciphertext = await globalThis.crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: iv as BufferSource },
+    { name: 'AES-GCM', iv: iv as BufferSource, additionalData: new TextEncoder().encode(context) },
     key,
     new TextEncoder().encode(plain),
   )
   return `${PREFIX}:${toBase64Url(iv)}:${toBase64Url(new Uint8Array(ciphertext))}`
 }
 
-export async function decryptSecret(stored: string, keyMaterial: string): Promise<string | null> {
+// v1 values weren't bound to a user and are rejected on purpose, so users re-enter their key once.
+export async function decryptSecret(stored: string, keyMaterial: string, context: string): Promise<string | null> {
   const parts = stored.split(':')
   if (parts.length !== 3) return null
   const [prefix, ivB64, ciphertextB64] = parts
@@ -52,7 +53,7 @@ export async function decryptSecret(stored: string, keyMaterial: string): Promis
   try {
     const key = await deriveAesKey(keyMaterial)
     const plainBytes = await globalThis.crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: iv as BufferSource },
+      { name: 'AES-GCM', iv: iv as BufferSource, additionalData: new TextEncoder().encode(context) },
       key,
       ciphertext as BufferSource,
     )

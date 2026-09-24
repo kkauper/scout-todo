@@ -82,7 +82,7 @@ The app combines a drag-and-drop task board with KPI summaries that show work in
 - Draft description: expand a quick idea into full context.
 - Suggest sub-todos: break down a task into steps.
 - Achievement summary: turn completed tasks into manager-ready bullet points.
-- **Claude**: add your own Anthropic API key in Account → AI settings. The key is checked with Anthropic before saving, stored encrypted on the server, and never sent back to the browser. Requests run server-side on `claude-opus-5`.
+- **Claude**: add your own Anthropic API key in Account → AI settings. The key is checked with Anthropic before saving, stored encrypted on the server, and never sent back to the browser. Requests run server-side on `claude-haiku-4-5`. Keys saved before this update must be re-entered once.
 - **Ollama**: without a Claude key, AI features use a local Ollama model if one is running. In the Cloudflare deployment only Claude is available.
 
 **Accounts and security**
@@ -186,7 +186,7 @@ Generate keys with `openssl rand -base64 32`. In the Cloudflare deployment the t
 - **Database**: PostgreSQL 17 (Docker on port 5433 locally; Supabase via Hyperdrive in production)
 - **Auth**: `nuxt-auth-utils` sealed cookie sessions, PBKDF2 password hashes (WebCrypto)
 - **Hosting**: Cloudflare Workers + Static Assets (Nitro preset `cloudflare_module`), Workers Rate Limiting for logins
-- **AI**: Anthropic TypeScript SDK (`claude-opus-5`) with per-user keys, or Ollama locally
+- **AI**: Anthropic TypeScript SDK (`claude-haiku-4-5`) with per-user keys, or Ollama locally
 - **Validation**: `zod` plus h3 validation helpers
 - **Tests**: Vitest 5 in a Node environment
 - **Fonts**: `@fontsource-variable/geist` (bundled; no external requests)

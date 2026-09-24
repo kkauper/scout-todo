@@ -90,6 +90,8 @@ Put `NUXT_SESSION_PASSWORD` in `.dev.vars` for local preview.
 - Ollama is unreachable in the cloud deployment (`OLLAMA_URL` is empty), but AI works once a user saves their own Claude API key in Account → AI settings.
 - Rotating `NUXT_SESSION_PASSWORD` signs everyone out.
 - Migration `0005` adds `users.session_version`; run it before deploying. Existing sessions are signed out once after this deploy.
+- Stored Claude keys are now bound to the user (AES-GCM additional authenticated data); keys saved before this update must be re-entered once in Account → AI settings.
+- `AI_LIMITER` (per-user AI rate limit) is created on deploy via the `ratelimits` entry in `wrangler.jsonc`; no manual setup needed.
 
 ### Upgrading from a single-account deployment
 

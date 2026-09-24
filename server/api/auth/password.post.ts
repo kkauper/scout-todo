@@ -1,23 +1,17 @@
 import { eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { PASSWORD_MIN, PASSWORD_MAX } from '../../db/users'
 
 const bodySchema = z.object({
   currentPassword: z.string().min(1).max(1000),
-  newPassword: z.string().min(8).max(1000),
+  newPassword: z.string().min(PASSWORD_MIN).max(PASSWORD_MAX),
 })
 
 export default defineEventHandler(async (event) => {
   const body = await readValidatedBody(event, bodySchema.parse)
 
-  const limiter = (event.context.cloudflare?.env as { LOGIN_LIMITER?: { limit(o: { key: string }): Promise<{ success: boolean }> } } | undefined)?.LOGIN_LIMITER
   const userId = await requireUserId(event)
-  if (limiter) {
-    const key = `pw:${userId}`
-    const { success } = await limiter.limit({ key })
-    if (!success) {
-      throw createError({ statusCode: 429, statusMessage: 'Too many login attempts. Try again in a minute.' })
-    }
-  }
+  await enforceRateLimit(event, 'LOGIN_LIMITER', `pw:${userId}`, 'Too many login attempts. Try again in a minute.')
 
   const db = useDb()
   const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId))

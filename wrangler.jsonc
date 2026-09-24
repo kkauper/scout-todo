@@ -16,6 +16,7 @@
     { "binding": "HYPERDRIVE", "id": "689da073ecf647eebf6902591c263720" }
   ],
   "ratelimits": [
-    { "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } }
+    { "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 5, "period": 60 } },
+    { "name": "AI_LIMITER", "namespace_id": "1002", "simple": { "limit": 20, "period": 60 } }
   ]
 }

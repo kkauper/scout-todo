@@ -23,8 +23,8 @@ async function onSubmit() {
   error.value = null
   success.value = null
 
-  if (newPassword.value.length < 8) {
-    error.value = 'New password must be at least 8 characters'
+  if (newPassword.value.length < 12) {
+    error.value = 'New password must be at least 12 characters'
     return
   }
   if (newPassword.value !== repeatPassword.value) {

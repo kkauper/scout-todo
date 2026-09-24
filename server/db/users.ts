@@ -8,7 +8,7 @@ import * as schema from './schema'
 type Db = PostgresJsDatabase<typeof schema>
 
 export const USERNAME_RE = /^[a-z0-9._-]{1,64}$/
-export const PASSWORD_MIN = 8
+export const PASSWORD_MIN = 12
 export const PASSWORD_MAX = 1000
 
 export function normalizeUsername(raw: string): string {

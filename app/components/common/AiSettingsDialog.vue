@@ -82,7 +82,7 @@ async function onRemove() {
       <form class="flex flex-col gap-4" @submit.prevent="onSave">
         <p class="text-sm text-muted-foreground">
           <template v-if="settings?.claudeKeyConfigured">
-            Using Claude (claude-opus-5) — key {{ settings.claudeKeyHint }}
+            Using Claude ({{ CLAUDE_MODEL }}) — key {{ settings.claudeKeyHint }}
           </template>
           <template v-else>
             No Claude key — using local AI (Ollama) when available
