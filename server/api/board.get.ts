@@ -4,7 +4,7 @@ import type { BoardData, ChecklistItem } from '#shared/types/domain'
 export default defineEventHandler(async (event): Promise<BoardData> => {
   const userId = await requireUserId(event)
   const db = useDb()
-  const [projectRows, tagRows, columnRows, taskRows, taskTagRows, checklistRows] = await Promise.all([
+  const [projectRows, tagRows, columnRows, taskRows, taskTagRows, checklistRows, linkRows] = await Promise.all([
     db.select().from(schema.projects).where(eq(schema.projects.userId, userId)),
     db.select().from(schema.tags).where(eq(schema.tags.userId, userId)),
     db.select().from(schema.boardColumns).where(eq(schema.boardColumns.userId, userId)).orderBy(asc(schema.boardColumns.position)),
@@ -20,6 +20,11 @@ export default defineEventHandler(async (event): Promise<BoardData> => {
       .innerJoin(schema.tasks, eq(schema.checklistItems.taskId, schema.tasks.id))
       .where(eq(schema.tasks.userId, userId))
       .orderBy(asc(schema.checklistItems.taskId), asc(schema.checklistItems.position)),
+    db
+      .select({ ...getTableColumns(schema.taskLinks) })
+      .from(schema.taskLinks)
+      .innerJoin(schema.tasks, eq(schema.taskLinks.fromTaskId, schema.tasks.id))
+      .where(eq(schema.tasks.userId, userId)),
   ])
 
   const tagsByTask = new Map<string, string[]>()
@@ -41,5 +46,6 @@ export default defineEventHandler(async (event): Promise<BoardData> => {
     tags: tagRows.map(toTag),
     columns: columnRows.map(toColumn),
     tasks: taskRows.map(t => toTask(t, tagsByTask.get(t.id) ?? [], checklistByTask.get(t.id) ?? [])),
+    links: linkRows.map(toTaskLink),
   }
 })

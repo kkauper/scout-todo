@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { computeKpis } from '../../shared/utils/kpi'
 import type { BoardColumn, Project, Task } from '../../shared/types/domain'
+import { TASK_SIZE_WEIGHTS } from '../../shared/types/domain'
 
 const NOW = new Date(2026, 8, 23, 12, 0, 0)
 
@@ -33,6 +34,7 @@ function makeTask(overrides: Partial<Task>): Task {
     columnId: BACKLOG_ID,
     position: 1000,
     deadline: null,
+    size: null,
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),
     stateChangedAt: daysAgo(1),
@@ -240,5 +242,62 @@ describe('computeKpis', () => {
   it('{ weeks: 4 } → weekly length 4', () => {
     const kpi = computeKpis(tasks, projects, columns, NOW, { weeks: 4 })
     expect(kpi.throughput.weekly.length).toBe(4)
+  })
+})
+
+describe('computeKpis size', () => {
+  const s1 = makeTask({ projectId: P1_ID, columnId: BACKLOG_ID, size: 'xs', title: 's1' })
+  const s2 = makeTask({ projectId: P1_ID, columnId: TODO_ID, size: null, title: 's2' })
+  const s3 = makeTask({ projectId: P1_ID, columnId: IN_PROGRESS_ID, size: 'm', title: 's3' })
+  const s4 = makeTask({ projectId: P1_ID, columnId: REVIEW_ID, size: null, title: 's4' })
+  const s5 = makeTask({ projectId: P2_ID, columnId: DONE_ID, completedAt: daysAgo(2), size: 'l', title: 's5' })
+  const s6 = makeTask({ projectId: P2_ID, columnId: DONE_ID, completedAt: daysAgo(1), size: null, title: 's6' })
+  const s7 = makeTask({ projectId: P2_ID, columnId: DONE_ID, completedAt: daysAgo(40), size: 'xl', title: 's7' })
+
+  const sizeTasks = [s1, s2, s3, s4, s5, s6, s7]
+
+  it('weights exposes TASK_SIZE_WEIGHTS', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW)
+    expect(kpi.size.weights).toEqual(TASK_SIZE_WEIGHTS)
+  })
+
+  it('open/wip/doneLast30 counts per size incl none', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW)
+    expect(kpi.size.open).toEqual({ xs: 1, s: 0, m: 0, l: 0, xl: 0, none: 1 })
+    expect(kpi.size.wip).toEqual({ xs: 0, s: 0, m: 1, l: 0, xl: 0, none: 1 })
+    expect(kpi.size.doneLast30).toEqual({ xs: 0, s: 0, m: 0, l: 1, xl: 0, none: 1 })
+  })
+
+  it('doneLast30Weight and wipWeight sum weights; unsized contributes 0', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW)
+    expect(kpi.size.doneLast30Weight).toBe(8) // l=8, none=0
+    expect(kpi.size.wipWeight).toBe(4) // m=4, none=0
+  })
+
+  it('unsizedShare = unsized / (open + active) not-done tasks', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW)
+    expect(kpi.size.unsizedShare).toBe(0.5) // 2 unsized of 4 not-done
+  })
+
+  it('unsizedShare is null when there are no open/active tasks', () => {
+    const onlyDone = [s5, s6, s7]
+    const kpi = computeKpis(onlyDone, projects, columns, NOW)
+    expect(kpi.size.unsizedShare).toBeNull()
+  })
+
+  it('throughput.weekly[i].weight sums weights for that week; unsized counts as 0', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW)
+    const lastBucket = kpi.throughput.weekly[kpi.throughput.weekly.length - 1]
+    expect(lastBucket.weekStart).toBe('2026-09-21')
+    expect(lastBucket.weight).toBe(8) // s5 (l=8) + s6 (none=0)
+  })
+
+  it('scope respected: projectId P1 excludes done tasks assigned to P2', () => {
+    const kpi = computeKpis(sizeTasks, projects, columns, NOW, { projectId: P1_ID })
+    expect(kpi.size.open).toEqual({ xs: 1, s: 0, m: 0, l: 0, xl: 0, none: 1 })
+    expect(kpi.size.wip).toEqual({ xs: 0, s: 0, m: 1, l: 0, xl: 0, none: 1 })
+    expect(kpi.size.doneLast30).toEqual({ xs: 0, s: 0, m: 0, l: 0, xl: 0, none: 0 })
+    expect(kpi.size.doneLast30Weight).toBe(0)
+    expect(kpi.size.unsizedShare).toBe(0.5)
   })
 })

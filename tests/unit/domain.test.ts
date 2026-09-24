@@ -24,6 +24,7 @@ function makeTask(overrides: Partial<Task>): Task {
     columnId: OPEN_ID,
     position: 1000,
     deadline: null,
+    size: null,
     createdAt: daysAgo(1),
     updatedAt: daysAgo(1),
     stateChangedAt: daysAgo(1),

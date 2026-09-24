@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm'
-import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task } from '#shared/types/domain'
+import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task, TaskLink, TaskLinkType } from '#shared/types/domain'
 import * as schema from '../db/schema'
 import type { useDb } from './db'
 
@@ -8,6 +8,7 @@ type TagRow = typeof schema.tags.$inferSelect
 type BoardColumnRow = typeof schema.boardColumns.$inferSelect
 type TaskRow = typeof schema.tasks.$inferSelect
 type ChecklistItemRow = typeof schema.checklistItems.$inferSelect
+type TaskLinkRow = typeof schema.taskLinks.$inferSelect
 
 export function toProject(row: ProjectRow): Project {
   return {
@@ -61,12 +62,23 @@ export function toTask(row: TaskRow, tagIds: string[], checklist: ChecklistItem[
     columnId: row.columnId,
     position: row.position,
     deadline: row.deadline ?? null,
+    size: row.size ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     stateChangedAt: row.stateChangedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     tagIds,
     checklist,
+  }
+}
+
+export function toTaskLink(row: TaskLinkRow): TaskLink {
+  return {
+    id: row.id,
+    fromTaskId: row.fromTaskId,
+    toTaskId: row.toTaskId,
+    type: row.type as TaskLinkType,
+    createdAt: row.createdAt.toISOString(),
   }
 }
 

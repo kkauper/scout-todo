@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { Check } from '@lucide/vue'
+import { Check, Plus } from '@lucide/vue'
 import { useBoardStore } from '../../stores/board'
 
 const model = defineModel<string[]>({ required: true })
@@ -36,11 +36,17 @@ async function onCreate(name: string) {
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <slot :tags="selectedTags" :open="open">
-        <Button variant="outline" size="sm" aria-label="Tags" class="h-auto min-h-7 flex-wrap justify-start">
-          <template v-if="selectedTags.length > 0">
-            <ColorBadge v-for="tag in selectedTags" :key="tag.id" :label="tag.name" :color="tag.color" />
-          </template>
-          <span v-else>Add tags</span>
+        <button
+          v-if="selectedTags.length > 0"
+          type="button"
+          class="flex min-h-7 flex-wrap items-center gap-1 rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          :aria-label="`Tags: ${selectedTags.length > 0 ? selectedTags.map((t) => t.name).join(', ') : 'Add tags'}`"
+        >
+          <ColorBadge v-for="tag in selectedTags" :key="tag.id" :label="tag.name" :color="tag.color" />
+        </button>
+        <Button v-else variant="outline" size="sm" class="rounded-full" aria-label="Tags: Add tags">
+          <Plus />
+          Add tags
         </Button>
       </slot>
     </PopoverTrigger>

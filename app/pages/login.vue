@@ -49,6 +49,8 @@ async function onSubmit() {
               autocomplete="username"
               autofocus
               :disabled="pending"
+              :aria-invalid="!!error || undefined"
+              :aria-describedby="error ? 'login-error' : undefined"
             />
           </div>
           <div class="flex flex-col gap-1.5">
@@ -59,9 +61,11 @@ async function onSubmit() {
               type="password"
               autocomplete="current-password"
               :disabled="pending"
+              :aria-invalid="!!error || undefined"
+              :aria-describedby="error ? 'login-error' : undefined"
             />
           </div>
-          <p v-if="error" role="alert" class="text-sm text-destructive">
+          <p v-if="error" id="login-error" role="alert" class="text-sm text-destructive">
             {{ error }}
           </p>
           <Button type="submit" class="w-full" :disabled="pending">

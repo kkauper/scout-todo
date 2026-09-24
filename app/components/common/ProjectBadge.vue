@@ -3,10 +3,13 @@ import { computed } from 'vue'
 import { Folder } from '@lucide/vue'
 import type { ColorKey } from '#shared/types/domain'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   label: string
   color: ColorKey | null
-}>()
+  size?: 'sm' | 'md'
+}>(), {
+  size: 'sm',
+})
 
 const badgeStyle = computed(() => {
   if (!props.color) return {}
@@ -22,11 +25,16 @@ const iconStyle = computed(() => (props.color ? { color: `var(--swatch-${props.c
 
 <template>
   <span
-    class="inline-flex items-center gap-1 rounded-md px-2 h-5.5 text-xs font-medium"
-    :class="!color && 'bg-muted text-muted-foreground'"
+    class="inline-flex items-center gap-1 font-medium"
+    :class="[
+      size === 'md'
+        ? 'h-7 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem]'
+        : 'rounded-md px-2 min-h-5.5 text-xs',
+      !color && 'bg-muted text-muted-foreground',
+    ]"
     :style="badgeStyle"
   >
-    <Folder class="size-3" :style="iconStyle" aria-hidden="true" />
+    <Folder :class="size === 'md' ? 'size-3.5' : 'size-3'" :style="iconStyle" aria-hidden="true" />
     {{ color ? label : 'No project' }}
   </span>
 </template>

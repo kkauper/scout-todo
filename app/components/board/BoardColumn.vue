@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch, watchEffect } from 'vue'
+import { useMediaQuery } from '@vueuse/core'
 import { VueDraggable } from 'vue-draggable-plus'
 import type { SortableEvent } from 'vue-draggable-plus'
 import { Circle, CircleCheck, CircleDot, MoreHorizontal } from '@lucide/vue'
@@ -20,8 +21,26 @@ watchEffect(() => {
 
 const inlineEditing = useState('inlineEditing', () => false)
 const wasEditing = ref(false)
+const dragging = useState('boardDragging', () => false)
+
+const prefersReducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+const dragAnimation = computed(() => (prefersReducedMotion.value ? 0 : 150))
+
+function onStart() {
+  dragging.value = true
+}
+
+function onChoose() {
+  try {
+    navigator.vibrate?.(10)
+  }
+  catch {
+    // ignore: vibrate may be unsupported or throw
+  }
+}
 
 function onEnd(evt: SortableEvent) {
+  dragging.value = false
   const id = (evt.item as HTMLElement).dataset.taskId
   const to = (evt.to as HTMLElement).dataset.columnId
   if (!id || !to || evt.newIndex == null) return
@@ -89,7 +108,7 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <section :aria-labelledby="`col-${column.id}`" class="flex h-full min-h-0 min-w-72 max-w-[32rem] flex-[1_1_18rem] flex-col rounded-xl bg-muted/50">
+  <section :aria-labelledby="`col-${column.id}`" :data-column-section="column.id" class="flex h-full min-h-0 min-w-72 max-w-[32rem] flex-[1_1_18rem] flex-col rounded-xl bg-muted/50 max-md:w-[calc(100vw-2rem)] max-md:min-w-[calc(100vw-2rem)] max-md:max-w-none max-md:flex-none max-md:snap-center">
     <div class="flex shrink-0 items-center gap-2 px-3 pt-3 pb-2">
       <TooltipProvider>
         <Tooltip>
@@ -158,27 +177,32 @@ async function confirmDelete() {
     <VueDraggable
       v-model="items"
       group="tasks"
-      :animation="150"
+      :animation="dragAnimation"
+      :delay="250"
+      :delay-on-touch-only="true"
+      :touch-start-threshold="6"
+      :scroll="true"
+      :scroll-sensitivity="60"
+      :bubble-scroll="true"
       tag="ul"
       role="list"
       :data-column-id="column.id"
       :filter="'[data-no-drag]'"
       :prevent-on-filter="false"
       class="flex min-h-24 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain px-2 pt-1 pb-2"
+      @start="onStart"
+      @choose="onChoose"
       @end="onEnd"
     >
       <li
         v-for="t in items"
         :key="t.id"
         role="listitem"
-        tabindex="0"
         :data-task-id="t.id"
-        :aria-label="`${t.title}, ${column.name}`"
-        :aria-current="taskId === t.id ? 'true' : undefined"
-        class="group/card list-none shrink-0 cursor-pointer rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring aria-[current=true]:ring-2 aria-[current=true]:ring-primary"
+        :data-current="taskId === t.id ? 'true' : undefined"
+        class="group/card list-none shrink-0 cursor-pointer rounded-xl outline-none select-none [-webkit-touch-callout:none] has-[[data-card-open]:focus-visible]:ring-2 has-[[data-card-open]:focus-visible]:ring-ring data-[current=true]:ring-2 data-[current=true]:ring-primary"
         @pointerdown.capture="wasEditing = inlineEditing"
         @click="onCardClick($event, t.id)"
-        @keydown.enter.self.prevent="openTask(t.id)"
       >
         <TaskCard :task="t" />
       </li>

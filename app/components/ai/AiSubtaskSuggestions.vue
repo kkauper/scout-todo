@@ -10,6 +10,7 @@ const props = defineProps<{
 const emit = defineEmits<{ add: [titles: string[]] }>()
 
 const { suggestSubtasks } = useAi()
+const { announce } = useLiveAnnouncer()
 
 const loading = ref(false)
 const errorText = ref<string | null>(null)
@@ -26,6 +27,7 @@ async function run() {
   errorText.value = null
   items.value = []
   checked.value = []
+  announce('Generating suggestions…')
   try {
     const result = await suggestSubtasks({
       title: props.title,
@@ -33,6 +35,7 @@ async function run() {
     })
     items.value = result.items
     checked.value = result.items.map(() => true)
+    announce(`${result.items.length} suggestions ready`)
   }
   catch (e) {
     errorText.value = extractErrorMessage(e)
@@ -55,12 +58,12 @@ function discard() {
   checked.value = []
   errorText.value = null
 }
+
+defineExpose({ run, loading })
 </script>
 
 <template>
-  <div class="flex flex-col gap-2">
-    <AiButton label="Suggest sub-todos" :loading="loading" @click="run" />
-
+  <div v-if="errorText || items.length" class="flex flex-col gap-2">
     <p v-if="errorText" class="text-xs text-destructive" role="alert">
       {{ errorText }}
     </p>

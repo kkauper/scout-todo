@@ -45,6 +45,7 @@ async function addItem() {
       type="button"
       data-no-drag
       :aria-expanded="open"
+      :aria-controls="`checklist-${task.id}`"
       :aria-label="`Sub-todos ${doneCount} of ${totalCount}, ${open ? 'collapse' : 'expand'}`"
       class="flex w-full items-center gap-2 text-xs text-muted-foreground"
       @click="open = !open"
@@ -54,7 +55,7 @@ async function addItem() {
       <Progress :model-value="progress" class="h-1 flex-1" />
       <ChevronDown class="size-3.5 shrink-0 transition-transform" :class="open ? 'rotate-180' : ''" />
     </button>
-    <ul v-if="open" data-no-drag role="list" class="space-y-1 pl-1">
+    <ul v-if="open" :id="`checklist-${task.id}`" data-no-drag role="list" class="space-y-1 pl-1">
       <li v-for="item in sortedItems" :key="item.id" class="flex items-center gap-2">
         <Checkbox
           :model-value="item.done"

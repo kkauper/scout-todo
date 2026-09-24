@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { TaskSize } from '#shared/types/domain'
 import { useBoardStore } from '../../stores/board'
 import { useTaskDialog } from '../../composables/useTaskDialog'
 import AiTitleSuggestions from '../ai/AiTitleSuggestions.vue'
@@ -14,6 +15,7 @@ const form = ref({
   description: null as string | null,
   projectId: null as string | null,
   deadline: null as string | null,
+  size: null as TaskSize | null,
   tagIds: [] as string[],
   columnId: null as string | null,
 })
@@ -50,6 +52,7 @@ watch(() => dialog.value.open, (isOpen) => {
     description: null,
     projectId,
     deadline: null,
+    size: null,
     tagIds: [],
     columnId: defaultCreateColumnId(),
   }
@@ -59,6 +62,8 @@ async function onAddSuggested(titles: string[]) {
   if (!titles.length) return
   draftChecklist.value.push(...titles)
 }
+
+const subtaskAi = ref<InstanceType<typeof AiSubtaskSuggestions> | null>(null)
 
 async function save() {
   const title = form.value.title.trim()
@@ -70,6 +75,7 @@ async function save() {
     projectId: form.value.projectId,
     description: form.value.description,
     deadline: form.value.deadline,
+    size: form.value.size,
     tagIds: form.value.tagIds,
   })
   if (result) {
@@ -101,9 +107,10 @@ async function save() {
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <ProjectPicker v-model="form.projectId" />
+            <SizePicker v-model="form.size" />
             <DeadlinePicker v-if="showMore" v-model="form.deadline" />
             <Select v-model="form.columnId as string">
-              <SelectTrigger class="w-40">
+              <SelectTrigger class="w-40" aria-label="Column">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -135,8 +142,12 @@ async function save() {
             v-if="showMore"
             :task-id="null"
             v-model:draft="draftChecklist"
-          />
-          <AiSubtaskSuggestions v-if="showMore" :title="form.title" :description="form.description" @add="onAddSuggested" />
+          >
+            <template v-if="showMore" #actions>
+              <AiButton label="Suggest sub-todos" :loading="subtaskAi?.loading ?? false" @click="subtaskAi?.run()" />
+            </template>
+          </ChecklistEditor>
+          <AiSubtaskSuggestions v-if="showMore" ref="subtaskAi" :title="form.title" :description="form.description" @add="onAddSuggested" />
         </div>
 
         <DialogFooter>

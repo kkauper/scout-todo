@@ -36,11 +36,17 @@ async function onCreate(name: string) {
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
       <slot :project="selectedProject" :open="open">
-        <Button variant="outline" size="sm" aria-label="Project">
-          <ProjectBadge
-            :label="selectedProject ? selectedProject.name : 'No project'"
-            :color="selectedProject ? selectedProject.color : null"
-          />
+        <button
+          v-if="selectedProject"
+          type="button"
+          class="rounded-[min(var(--radius-md),12px)] outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          :aria-label="`Project: ${selectedProject.name}`"
+        >
+          <ProjectBadge size="md" :label="selectedProject.name" :color="selectedProject.color" />
+        </button>
+        <Button v-else variant="outline" size="sm" aria-label="Project: No project">
+          <Folder />
+          No project
         </Button>
       </slot>
     </PopoverTrigger>

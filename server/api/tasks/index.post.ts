@@ -1,5 +1,6 @@
-import { and, asc, eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { TASK_SIZES } from '#shared/types/domain'
 
 const bodySchema = z.object({
   title: z.string().trim().min(1).max(200),
@@ -7,6 +8,7 @@ const bodySchema = z.object({
   projectId: z.uuid().nullable().optional(),
   columnId: z.uuid().optional(),
   deadline: z.iso.date().nullable().optional(),
+  size: z.enum(TASK_SIZES).nullable().optional(),
   tagIds: z.array(z.uuid()).optional().default([]),
 })
 
@@ -25,9 +27,7 @@ export default defineEventHandler(async (event) => {
         targetColumn = col
       }
       else {
-        const columns = await tx.select().from(schema.boardColumns).where(eq(schema.boardColumns.userId, userId)).orderBy(asc(schema.boardColumns.position))
-        targetColumn = columns.find(c => c.kind === 'open' && !c.hidden) ?? columns[0]
-        if (!targetColumn) throw createError({ statusCode: 500, statusMessage: 'No columns exist' })
+        targetColumn = await defaultColumn(tx, userId)
       }
 
       await assertOwnedRefs(tx, userId, { projectId: body.projectId, tagIds: body.tagIds }, 'Invalid projectId or tagIds')
@@ -48,6 +48,7 @@ export default defineEventHandler(async (event) => {
           columnId: targetColumn.id,
           position,
           deadline: body.deadline ?? null,
+          size: body.size ?? null,
           ...(targetColumn.kind === 'done' ? { completedAt: now } : {}),
         })
         .returning()

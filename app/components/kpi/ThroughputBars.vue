@@ -1,18 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-const props = defineProps<{
-  weekly: { weekStart: string; count: number }[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    weekly: { weekStart: string; count: number; weight?: number }[]
+    metric?: 'count' | 'weight'
+    unit?: string
+  }>(),
+  { metric: 'count', unit: 'done' },
+)
 
-const max = computed(() => Math.max(1, ...props.weekly.map(w => w.count)))
-
-function heightPct(count: number): number {
-  return Math.max((count / max.value) * 100, 4)
+function valueOf(w: { count: number; weight?: number }): number {
+  return props.metric === 'weight' ? (w.weight ?? 0) : w.count
 }
 
-function barLabel(w: { weekStart: string; count: number }): string {
-  return `Week of ${w.weekStart}: ${w.count} done`
+const max = computed(() => Math.max(1, ...props.weekly.map(valueOf)))
+
+function heightPct(w: { count: number; weight?: number }): number {
+  return Math.max((valueOf(w) / max.value) * 100, 4)
+}
+
+function barLabel(w: { weekStart: string; count: number; weight?: number }): string {
+  return `Week of ${w.weekStart}: ${valueOf(w)} ${props.unit}`
 }
 </script>
 
@@ -24,7 +33,7 @@ function barLabel(w: { weekStart: string; count: number }): string {
           <TooltipTrigger as-child>
             <div
               class="flex-1 rounded-sm bg-primary/80"
-              :style="{ height: `${heightPct(w.count)}%` }"
+              :style="{ height: `${heightPct(w)}%` }"
               role="img"
               :aria-label="barLabel(w)"
             />

@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue'
 import { useIntervalFn, useNow } from '@vueuse/core'
-import { AlertCircle, Check, EllipsisVertical, Pencil, X } from '@lucide/vue'
-import type { Task } from '#shared/types/domain'
+import { AlertCircle, Ban, Check, EllipsisVertical, Pencil, X } from '@lucide/vue'
+import type { BoardColumn, Task } from '#shared/types/domain'
+import { TASK_SIZE_HINTS, TASK_SIZE_LABELS } from '#shared/types/domain'
 import { daysBetween, isOverdue, localDateIso } from '#shared/utils/dates'
+import { isBlocked } from '#shared/utils/links'
 import { useBoardStore } from '../../stores/board'
 import { useTaskPanel } from '../../composables/useTaskPanel'
+import { useLiveAnnouncer } from '../../composables/useLiveAnnouncer'
 
 const props = defineProps<{ task: Task }>()
 
 const store = useBoardStore()
-const { openTask } = useTaskPanel()
+const { taskId, openTask } = useTaskPanel()
+const { announce } = useLiveAnnouncer()
+
+const isOpen = computed(() => taskId.value === props.task.id)
 
 const now = useNow({ scheduler: (cb) => useIntervalFn(cb, 60_000) })
 
@@ -54,6 +60,100 @@ const otherColumns = computed(() => store.visibleColumns.filter((c) => c.id !== 
 const overdue = computed(() => isOverdue(props.task, kind.value, now.value))
 const daysInColumn = computed(() => Math.floor(daysBetween(props.task.stateChangedAt, now.value)))
 
+function taskIsDone(id: string): boolean {
+  const task = store.tasks.find((t) => t.id === id)
+  return task ? store.columnById.get(task.columnId)?.kind === 'done' : false
+}
+const blocked = computed(() => isBlocked(props.task.id, store.links, taskIsDone))
+const blockerTitle = computed(() => {
+  const titles = store.links
+    .filter((l) => l.type === 'blocks' && l.toTaskId === props.task.id && !taskIsDone(l.fromTaskId))
+    .map((l) => store.tasks.find((t) => t.id === l.fromTaskId)?.title)
+    .filter((t): t is string => !!t)
+  return `Blocked by ${titles.join(', ')}`
+})
+
+const checklistDone = computed(() => props.task.checklist.filter((i) => i.done).length)
+const checklistTotal = computed(() => props.task.checklist.length)
+
+const metaText = computed(() => {
+  const parts: string[] = [`${column.value?.name ?? 'Unknown'}.`]
+  if (props.task.deadline) {
+    parts.push(overdue.value ? `Overdue, due ${props.task.deadline}.` : `Due ${props.task.deadline}.`)
+  }
+  if (blocked.value) parts.push(`${blockerTitle.value}.`)
+  if (props.task.size) parts.push(`Size ${TASK_SIZE_LABELS[props.task.size]}.`)
+  if (checklistTotal.value > 0) parts.push(`${checklistDone.value} of ${checklistTotal.value} sub-todos done.`)
+  parts.push('Alt plus arrow keys to move.')
+  return parts.join(' ')
+})
+
+const columnTaskIds = computed(() => store.tasksByColumn(props.task.columnId).map((t) => t.id))
+const indexInColumn = computed(() => columnTaskIds.value.indexOf(props.task.id))
+const canMoveUp = computed(() => indexInColumn.value > 0)
+const canMoveDown = computed(() => indexInColumn.value !== -1 && indexInColumn.value < columnTaskIds.value.length - 1)
+
+async function refocusCard() {
+  await nextTick()
+  const el = document.querySelector<HTMLElement>(`[data-task-id="${props.task.id}"] [data-card-open]`)
+  el?.focus()
+  el?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+}
+
+function announceMove() {
+  const list = store.tasksByColumn(props.task.columnId)
+  const pos = list.findIndex((t) => t.id === props.task.id) + 1
+  announce(`Moved "${props.task.title}" to ${column.value?.name ?? ''}, position ${pos} of ${list.length}.`)
+}
+
+async function moveWithin(delta: -1 | 1) {
+  const ok = await store.moveTaskWithinColumn(props.task.id, delta)
+  if (ok) {
+    await refocusCard()
+    announceMove()
+  }
+  else {
+    announce(`"${props.task.title}" is already at the ${delta === -1 ? 'top' : 'bottom'}`)
+  }
+}
+
+async function moveAcross(direction: -1 | 1) {
+  const ok = await store.moveTaskToAdjacentColumn(props.task.id, direction)
+  if (ok) {
+    await refocusCard()
+    announceMove()
+  }
+  else {
+    announce(`"${props.task.title}" is already in the ${direction === -1 ? 'first' : 'last'} column`)
+  }
+}
+
+async function moveToColumn(target: BoardColumn) {
+  const toIndex = store.tasksByColumn(target.id).length
+  await store.moveTask(props.task.id, target.id, toIndex)
+  announce(`Moved "${props.task.title}" to ${target.name}, position ${toIndex + 1} of ${store.tasksByColumn(target.id).length}.`)
+}
+
+function onTitleKeydown(e: KeyboardEvent) {
+  if (!e.altKey) return
+  if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    moveWithin(-1)
+  }
+  else if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    moveWithin(1)
+  }
+  else if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    moveAcross(-1)
+  }
+  else if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    moveAcross(1)
+  }
+}
+
 function onDelete() {
   store.deleteTask(props.task.id)
 }
@@ -63,9 +163,16 @@ function onDelete() {
   <Card class="cursor-grab gap-2 py-3" :data-no-open="editingTitle ? '' : undefined">
     <CardHeader class="flex flex-row items-start justify-between gap-2 px-3">
       <CardTitle class="flex-1 text-sm font-medium line-clamp-2">
-        <span v-if="!editingTitle" class="line-clamp-2 text-sm font-medium">
-          {{ task.title }}
-        </span>
+        <button
+          v-if="!editingTitle"
+          type="button"
+          data-card-open
+          class="line-clamp-2 text-left text-sm font-medium outline-none rounded-sm"
+          :aria-describedby="`task-meta-${task.id}`"
+          :aria-current="isOpen ? 'true' : undefined"
+          @click.stop="openTask(task.id)"
+          @keydown="onTitleKeydown"
+        >{{ task.title }}</button>
         <div v-else class="flex items-center gap-1">
           <Input
             ref="titleInputRef"
@@ -104,6 +211,7 @@ function onDelete() {
             <X class="size-3.5" />
           </Button>
         </div>
+        <span :id="`task-meta-${task.id}`" class="sr-only">{{ metaText }}</span>
       </CardTitle>
       <div class="flex shrink-0 items-center gap-0.5">
         <Button
@@ -127,13 +235,19 @@ function onDelete() {
             <DropdownMenuItem @click="openTask(task.id)">
               Open
             </DropdownMenuItem>
+            <DropdownMenuItem :disabled="!canMoveUp" @click="moveWithin(-1)">
+              Move up
+            </DropdownMenuItem>
+            <DropdownMenuItem :disabled="!canMoveDown" @click="moveWithin(1)">
+              Move down
+            </DropdownMenuItem>
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>Move to</DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 <DropdownMenuItem
                   v-for="c in otherColumns"
                   :key="c.id"
-                  @click="store.moveTask(task.id, c.id, store.tasksByColumn(c.id).length)"
+                  @click="moveToColumn(c)"
                 >
                   {{ c.name }}
                 </DropdownMenuItem>
@@ -156,7 +270,7 @@ function onDelete() {
           <button
             type="button"
             :aria-label="pickedProject ? `Project: ${pickedProject.name}. Change project` : 'Assign project'"
-            :class="pickedProject ? 'order-1 rounded-md focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-3 h-5.5 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
+            :class="pickedProject ? 'order-1 inline-flex min-h-6 items-center rounded-md focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-3 min-h-6 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
             @dblclick.stop
             @keydown.stop
           >
@@ -173,7 +287,7 @@ function onDelete() {
           <button
             type="button"
             aria-label="Edit tags"
-            :class="pickedTags.length ? 'order-2 flex items-center gap-1 rounded-full focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-4 h-5.5 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
+            :class="pickedTags.length ? 'order-2 flex min-h-6 items-center gap-1 rounded-full focus-visible:ring-2 focus-visible:ring-ring outline-none' : ['order-4 min-h-6 items-center rounded-full border border-dashed px-2 text-xs text-muted-foreground', pickerOpen ? 'inline-flex' : 'hidden group-hover/card:inline-flex group-focus-within/card:inline-flex']"
             @dblclick.stop
             @keydown.stop
           >
@@ -185,9 +299,35 @@ function onDelete() {
           </button>
         </template>
       </TagPicker>
+      <TooltipProvider v-if="task.size">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Badge
+              variant="outline"
+              class="order-5 h-5 px-1.5 text-[10px] font-semibold"
+              :aria-label="`Size ${TASK_SIZE_LABELS[task.size]}`"
+            >
+              {{ TASK_SIZE_LABELS[task.size] }}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>{{ TASK_SIZE_HINTS[task.size] }}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </CardContent>
     <CardChecklist :task="task" class="px-3" />
-    <div class="px-3 text-xs text-muted-foreground flex gap-3">
+    <div class="px-3 text-xs text-muted-foreground flex items-center gap-3">
+      <TooltipProvider v-if="blocked">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Ban
+              role="img"
+              aria-label="Blocked"
+              class="size-3.5 shrink-0 text-destructive"
+            />
+          </TooltipTrigger>
+          <TooltipContent>{{ blockerTitle }}</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <template v-if="task.deadline">
         <span v-if="overdue" class="text-destructive font-medium flex items-center gap-1">
           <AlertCircle class="size-3.5" />

@@ -1,9 +1,10 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-import type { BoardColumn, BoardData, ChecklistItem, ColorKey, ColumnKind, Project, StateEvent, Tag, Task } from '#shared/types/domain'
+import type { BoardColumn, BoardData, ChecklistItem, ColorKey, ColumnKind, Project, StateEvent, Tag, Task, TaskLink, TaskLinkType, TaskSize } from '#shared/types/domain'
 import { COLOR_KEYS } from '#shared/types/domain'
 import { transitionPatch } from '#shared/utils/transitions'
 import { positionAtIndex, positionBetween } from '#shared/utils/position'
+import { adjacentColumnId, withinColumnTargetIndex } from '#shared/utils/reorder'
 
 export const useBoardStore = defineStore('board', () => {
   const requestFetch = useRequestFetch()
@@ -12,6 +13,7 @@ export const useBoardStore = defineStore('board', () => {
   const tags = ref<Tag[]>([])
   const tasks = ref<Task[]>([])
   const columns = ref<BoardColumn[]>([])
+  const links = ref<TaskLink[]>([])
   const projectFilter = ref<string | null | 'none'>(null)
   const loaded = ref(false)
   const revision = ref(0)
@@ -45,6 +47,7 @@ export const useBoardStore = defineStore('board', () => {
       tags.value = data.tags
       tasks.value = data.tasks
       columns.value = data.columns
+      links.value = data.links
       loaded.value = true
     }
     catch (e) {
@@ -119,7 +122,31 @@ export const useBoardStore = defineStore('board', () => {
     if (result) upsertTask(result)
   }
 
-  async function createTask(input: { title: string; columnId?: string; projectId?: string | null; description?: string | null; deadline?: string | null; tagIds?: string[] }): Promise<Task | undefined> {
+  async function moveTaskWithinColumn(id: string, delta: -1 | 1): Promise<boolean> {
+    const task = tasks.value.find((t) => t.id === id)
+    if (!task) return false
+    const orderedIds = tasksByColumn(task.columnId).map((t) => t.id)
+    const targetIndex = withinColumnTargetIndex(orderedIds, id, delta)
+    if (targetIndex === null) return false
+    await moveTask(id, task.columnId, targetIndex)
+    return true
+  }
+
+  async function moveTaskToAdjacentColumn(id: string, direction: -1 | 1): Promise<boolean> {
+    const task = tasks.value.find((t) => t.id === id)
+    if (!task) return false
+    const ids = visibleColumns.value.map((c) => c.id)
+    const targetColumnId = adjacentColumnId(ids, task.columnId, direction)
+    if (!targetColumnId) return false
+    const sourceList = tasksByColumn(task.columnId)
+    const currentIndex = sourceList.findIndex((t) => t.id === id)
+    const targetList = tasksByColumn(targetColumnId)
+    const targetIndex = Math.min(currentIndex === -1 ? 0 : currentIndex, targetList.length)
+    await moveTask(id, targetColumnId, targetIndex)
+    return true
+  }
+
+  async function createTask(input: { title: string; columnId?: string; projectId?: string | null; description?: string | null; deadline?: string | null; size?: TaskSize | null; tagIds?: string[] }): Promise<Task | undefined> {
     const projectId = input.projectId !== undefined
       ? input.projectId
       : (projectFilter.value && projectFilter.value !== 'none' ? projectFilter.value : null)
@@ -132,6 +159,7 @@ export const useBoardStore = defineStore('board', () => {
         projectId,
         description: input.description ?? null,
         deadline: input.deadline ?? null,
+        size: input.size ?? null,
         tagIds: input.tagIds ?? [],
       },
     }))
@@ -139,13 +167,14 @@ export const useBoardStore = defineStore('board', () => {
     return result
   }
 
-  async function updateTask(id: string, patch: { title?: string; description?: string | null; projectId?: string | null; deadline?: string | null; tagIds?: string[] }) {
+  async function updateTask(id: string, patch: { title?: string; description?: string | null; projectId?: string | null; deadline?: string | null; size?: TaskSize | null; tagIds?: string[] }) {
     const task = tasks.value.find((t) => t.id === id)
     if (task) {
       if (patch.title !== undefined) task.title = patch.title
       if (patch.description !== undefined) task.description = patch.description
       if (patch.projectId !== undefined) task.projectId = patch.projectId
       if (patch.deadline !== undefined) task.deadline = patch.deadline
+      if (patch.size !== undefined) task.size = patch.size
       if (patch.tagIds !== undefined) task.tagIds = patch.tagIds
       task.updatedAt = new Date().toISOString()
     }
@@ -159,7 +188,41 @@ export const useBoardStore = defineStore('board', () => {
 
   async function deleteTask(id: string) {
     tasks.value = tasks.value.filter((t) => t.id !== id)
+    links.value = links.value.filter((l) => l.fromTaskId !== id && l.toTaskId !== id)
     await run(() => $fetch(`/api/tasks/${id}`, { method: 'DELETE' }))
+  }
+
+  async function addLink(taskId: string, toTaskId: string, type: TaskLinkType) {
+    const result = await run(() => $fetch<TaskLink>(`/api/tasks/${taskId}/links`, {
+      method: 'POST',
+      body: { toTaskId, type },
+    }))
+    if (result) links.value.push(result)
+    return result
+  }
+
+  async function removeLink(id: string) {
+    links.value = links.value.filter((l) => l.id !== id)
+    await run(() => $fetch(`/api/links/${id}`, { method: 'DELETE' }))
+  }
+
+  async function convertChecklistItem(taskId: string, itemId: string): Promise<Task | undefined> {
+    const result = await run(() => $fetch<{ task: Task; link: TaskLink; item: ChecklistItem }>(`/api/checklist/${itemId}/convert`, {
+      method: 'POST',
+    }))
+    if (!result) return undefined
+
+    upsertTask(result.task)
+    links.value.push(result.link)
+
+    const task = tasks.value.find((t) => t.id === taskId)
+    if (task) {
+      const index = task.checklist.findIndex((i) => i.id === itemId)
+      if (index === -1) task.checklist.push(result.item)
+      else task.checklist.splice(index, 1, result.item)
+    }
+
+    return result.task
   }
 
   async function addChecklistItems(taskId: string, titles: string[]) {
@@ -294,6 +357,7 @@ export const useBoardStore = defineStore('board', () => {
     tags,
     tasks,
     columns,
+    links,
     projectFilter,
     loaded,
     revision,
@@ -308,9 +372,14 @@ export const useBoardStore = defineStore('board', () => {
     tasksByColumn,
     load,
     moveTask,
+    moveTaskWithinColumn,
+    moveTaskToAdjacentColumn,
     createTask,
     updateTask,
     deleteTask,
+    addLink,
+    removeLink,
+    convertChecklistItem,
     addChecklistItems,
     updateChecklistItem,
     deleteChecklistItem,

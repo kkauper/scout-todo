@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { X } from '@lucide/vue'
+import { SquareArrowOutUpRight, X } from '@lucide/vue'
 import { useBoardStore } from '../../stores/board'
 
 const props = defineProps<{ taskId: string | null }>()
 const draft = defineModel<string[]>('draft', { default: () => [] })
 
 const store = useBoardStore()
+const { announce } = useLiveAnnouncer()
 
 const newTitle = ref('')
 const drafts = reactive<Record<string, string>>({})
@@ -31,13 +32,19 @@ function rowValue(row: Row): string {
   return drafts[row.key] ?? row.title
 }
 
+function rowAriaLabel(row: Row): string {
+  return row.draftIndex !== null ? `Sub-todo ${row.draftIndex + 1}` : `Sub-todo: ${row.title}`
+}
+
 function onInput(row: Row, value: string | number) {
   drafts[row.key] = String(value)
 }
 
 function toggleDone(row: Row, value: boolean | 'indeterminate') {
   if (!props.taskId || !row.itemId) return
-  store.updateChecklistItem(props.taskId, row.itemId, { done: value === true })
+  const done = value === true
+  store.updateChecklistItem(props.taskId, row.itemId, { done })
+  announce(`"${row.title}" marked ${done ? 'done' : 'not done'}`)
 }
 
 function commitEdit(row: Row) {
@@ -64,6 +71,13 @@ function removeRow(row: Row) {
   else if (row.draftIndex !== null) {
     draft.value = draft.value.filter((_, i) => i !== row.draftIndex)
   }
+  announce(`Removed "${row.title}"`)
+}
+
+function convertToTask(row: Row) {
+  if (!props.taskId || !row.itemId) return
+  store.convertChecklistItem(props.taskId, row.itemId)
+  announce(`Converted "${row.title}" to a task`)
 }
 
 function addItem() {
@@ -76,14 +90,18 @@ function addItem() {
   else {
     draft.value = [...draft.value, title]
   }
+  announce(`Added "${title}"`)
 }
 </script>
 
 <template>
   <div class="space-y-2">
-    <div class="flex items-center justify-between text-sm font-medium">
-      <span>Sub-todos</span>
-      <span v-if="totalCount > 0" class="text-xs font-normal text-muted-foreground">{{ doneCount }}/{{ totalCount }}</span>
+    <div class="flex items-center justify-between">
+      <Label as="span" class="gap-1.5">
+        Sub-todos
+        <span v-if="totalCount > 0" class="text-xs font-normal text-muted-foreground">{{ doneCount }}/{{ totalCount }}</span>
+      </Label>
+      <slot name="actions" />
     </div>
     <ul class="space-y-1" role="list">
       <li v-for="row in rows" :key="row.key" class="flex items-center gap-2">
@@ -95,11 +113,23 @@ function addItem() {
         />
         <Input
           :model-value="rowValue(row)"
+          :aria-label="rowAriaLabel(row)"
           class="h-7 flex-1 border-transparent px-1 shadow-none focus-visible:border-input"
           @update:model-value="(v) => onInput(row, v)"
           @blur="commitEdit(row)"
           @keydown.enter.prevent="commitEdit(row)"
         />
+        <Button
+          v-if="props.taskId && row.itemId && !row.done"
+          type="button"
+          variant="ghost"
+          size="icon"
+          class="size-6 shrink-0"
+          :aria-label="`Convert “${row.title}” to task`"
+          @click="convertToTask(row)"
+        >
+          <SquareArrowOutUpRight class="size-3.5" />
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -115,6 +145,7 @@ function addItem() {
     <Input
       v-model="newTitle"
       placeholder="Add sub-todo…"
+      aria-label="Add sub-todo"
       class="h-8"
       @keydown.enter.prevent="addItem"
     />

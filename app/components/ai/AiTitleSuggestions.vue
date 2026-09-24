@@ -11,6 +11,7 @@ const props = defineProps<{
 const emit = defineEmits<{ pick: [title: string] }>()
 
 const { improveTitle } = useAi()
+const { announce } = useLiveAnnouncer()
 
 const open = ref(false)
 const loading = ref(false)
@@ -27,6 +28,7 @@ async function load() {
   loading.value = true
   errorText.value = null
   suggestions.value = []
+  announce('Generating suggestions…')
   try {
     const result = await improveTitle({
       title: props.title,
@@ -34,6 +36,7 @@ async function load() {
       projectName: props.projectName ?? null,
     })
     suggestions.value = result.suggestions
+    announce(`${result.suggestions.length} suggestions ready`)
   }
   catch (e) {
     errorText.value = extractErrorMessage(e)

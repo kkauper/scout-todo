@@ -11,9 +11,9 @@ defineProps<{
 const store = useBoardStore()
 
 const KIND_SEGMENT_CLASS: Record<ColumnKind, string> = {
-  open: 'bg-muted-foreground/40',
-  active: 'bg-[var(--swatch-blue)]',
-  done: 'bg-[var(--swatch-green)]',
+  open: 'bg-muted-foreground',
+  active: 'bg-[oklch(0.56_0.214_259.815)] dark:bg-[var(--swatch-blue)]',
+  done: 'bg-[oklch(0.5_0.219_149.579)] dark:bg-[var(--swatch-green)]',
 }
 
 function segmentWidth(count: number, total: number): number {

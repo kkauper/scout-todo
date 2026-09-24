@@ -73,10 +73,13 @@ let aliceProjectId: string
 let aliceTagId: string
 let aliceColumnId: string
 let aliceTaskId: string
+let aliceTaskId2: string
 let aliceChecklistItemId: string
+let aliceLinkId: string
 let aliceBoardSnapshot: unknown
 
 let bobColumnId: string
+let bobTaskId: string
 
 beforeAll(async () => {
   const alice = await createUser(db, aliceUsername, PASSWORD)
@@ -107,11 +110,23 @@ beforeAll(async () => {
   const checklistRes = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/checklist`, { titles: ['Iso item'] })
   aliceChecklistItemId = checklistRes.json[0].id
 
+  const taskRes2 = await api(aliceCookie, 'POST', '/api/tasks', {
+    title: `Iso Task 2 ${suffix}`,
+    columnId: aliceColumnId,
+  })
+  aliceTaskId2 = taskRes2.json.id
+
+  const linkRes = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/links`, { toTaskId: aliceTaskId2, type: 'relates' })
+  aliceLinkId = linkRes.json.id
+
   const boardRes = await api(aliceCookie, 'GET', '/api/board')
   aliceBoardSnapshot = boardRes.json
 
   const bobColumnsRes = await api(bobCookie, 'GET', '/api/board')
   bobColumnId = bobColumnsRes.json.columns[0].id
+
+  const bobTaskRes = await api(bobCookie, 'POST', '/api/tasks', { title: `Iso Bob Task ${suffix}`, columnId: bobColumnId })
+  bobTaskId = bobTaskRes.json.id
 })
 
 afterAll(async () => {
@@ -226,7 +241,27 @@ describe('multi-user isolation', () => {
     expect(res.status).toBe(200)
   })
 
-  it('9. alice\'s board is unchanged by any of the above', async () => {
+  it('9. task link and checklist-convert isolation', async () => {
+    const linkFromForeignTask = await api(bobCookie, 'POST', `/api/tasks/${aliceTaskId}/links`, { toTaskId: bobTaskId, type: 'relates' })
+    expect(linkFromForeignTask.status).toBe(404)
+
+    const linkToForeignTask = await api(bobCookie, 'POST', `/api/tasks/${bobTaskId}/links`, { toTaskId: aliceTaskId, type: 'relates' })
+    expect(linkToForeignTask.status).toBe(404)
+
+    const deleteForeignLink = await api(bobCookie, 'DELETE', `/api/links/${aliceLinkId}`)
+    expect(deleteForeignLink.status).toBe(404)
+
+    const convertForeignItem = await api(bobCookie, 'POST', `/api/checklist/${aliceChecklistItemId}/convert`)
+    expect(convertForeignItem.status).toBe(404)
+
+    const selfLink = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/links`, { toTaskId: aliceTaskId, type: 'relates' })
+    expect(selfLink.status).toBe(422)
+
+    const bobBoard = await api(bobCookie, 'GET', '/api/board')
+    expect(bobBoard.json.links.map((l: any) => l.id)).not.toContain(aliceLinkId)
+  })
+
+  it('10. alice\'s board is unchanged by any of the above', async () => {
     const { json } = await api(aliceCookie, 'GET', '/api/board')
     expect(json).toEqual(aliceBoardSnapshot)
   })

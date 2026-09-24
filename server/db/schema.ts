@@ -1,5 +1,6 @@
 import {
   boolean,
+  check,
   date,
   doublePrecision,
   index,
@@ -12,10 +13,12 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
-import { COLUMN_KINDS } from '../../shared/types/domain'
+import { relations, sql } from 'drizzle-orm'
+import { COLUMN_KINDS, TASK_LINK_TYPES, TASK_SIZES } from '../../shared/types/domain'
 
 export const columnKind = pgEnum('column_kind', COLUMN_KINDS)
+export const taskSize = pgEnum('task_size', TASK_SIZES)
+export const taskLinkType = pgEnum('task_link_type', TASK_LINK_TYPES)
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -69,6 +72,7 @@ export const tasks = pgTable('tasks', {
   columnId: uuid('column_id').notNull().references(() => boardColumns.id, { onDelete: 'restrict' }),
   position: doublePrecision('position').notNull().default(1000),
   deadline: date('deadline', { mode: 'string' }),
+  size: taskSize('size'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
   stateChangedAt: timestamp('state_changed_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
@@ -97,6 +101,18 @@ export const checklistItems = pgTable('checklist_items', {
   completedAt: timestamp('completed_at', { withTimezone: true, mode: 'date' }),
 }, (t) => [
   index('checklist_items_task_id_position_idx').on(t.taskId, t.position),
+])
+
+export const taskLinks = pgTable('task_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  fromTaskId: uuid('from_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  toTaskId: uuid('to_task_id').notNull().references(() => tasks.id, { onDelete: 'cascade' }),
+  type: taskLinkType('type').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('task_links_from_to_type_unique').on(t.fromTaskId, t.toTaskId, t.type),
+  index('task_links_to_task_id_idx').on(t.toTaskId),
+  check('task_links_no_self', sql`${t.fromTaskId} <> ${t.toTaskId}`),
 ])
 
 export const taskStateEvents = pgTable('task_state_events', {
@@ -139,6 +155,8 @@ export const tasksRelations = relations(tasks, ({ one, many }) => ({
   taskTags: many(taskTags),
   stateEvents: many(taskStateEvents),
   checklistItems: many(checklistItems),
+  linksFrom: many(taskLinks, { relationName: 'linksFrom' }),
+  linksTo: many(taskLinks, { relationName: 'linksTo' }),
 }))
 
 export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
@@ -148,6 +166,11 @@ export const checklistItemsRelations = relations(checklistItems, ({ one }) => ({
 export const taskTagsRelations = relations(taskTags, ({ one }) => ({
   task: one(tasks, { fields: [taskTags.taskId], references: [tasks.id] }),
   tag: one(tags, { fields: [taskTags.tagId], references: [tags.id] }),
+}))
+
+export const taskLinksRelations = relations(taskLinks, ({ one }) => ({
+  fromTask: one(tasks, { fields: [taskLinks.fromTaskId], references: [tasks.id], relationName: 'linksFrom' }),
+  toTask: one(tasks, { fields: [taskLinks.toTaskId], references: [tasks.id], relationName: 'linksTo' }),
 }))
 
 export const taskStateEventsRelations = relations(taskStateEvents, ({ one }) => ({

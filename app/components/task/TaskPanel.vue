@@ -1,23 +1,30 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { useIntervalFn, useNow } from '@vueuse/core'
-import { X } from '@lucide/vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useIntervalFn, useMediaQuery, useNow } from '@vueuse/core'
+import { Circle, CircleCheck, CircleDot, X } from '@lucide/vue'
 import { COLUMN_KIND_LABELS } from '#shared/types/domain'
-import type { StateEvent } from '#shared/types/domain'
+import type { StateEvent, TaskSize } from '#shared/types/domain'
 import { useBoardStore } from '../../stores/board'
 import { useTaskPanel } from '../../composables/useTaskPanel'
+import { useLiveAnnouncer } from '../../composables/useLiveAnnouncer'
 import AiTitleSuggestions from '../ai/AiTitleSuggestions.vue'
 import AiDescriptionButton from '../ai/AiDescriptionButton.vue'
 import AiSubtaskSuggestions from '../ai/AiSubtaskSuggestions.vue'
 
 const store = useBoardStore()
 const { taskId, closeTask } = useTaskPanel()
+const { announce } = useLiveAnnouncer()
+
+const isMobile = useMediaQuery('(max-width: 767.98px)')
 
 const task = computed(() => (taskId.value ? store.tasks.find((t) => t.id === taskId.value) ?? null : null))
 
 // Task was deleted while the panel was open for it.
 watch(task, (t) => {
-  if (taskId.value && !t) closeTask()
+  if (taskId.value && !t) {
+    announce('This task was deleted.')
+    closeTask()
+  }
 })
 
 const projectName = computed(() => (task.value?.projectId ? store.projectById.get(task.value.projectId)?.name ?? null : null))
@@ -65,10 +72,37 @@ const deadline = computed<string | null>({
   get: () => task.value?.deadline ?? null,
   set: (value) => { save({ deadline: value }) },
 })
+const size = computed<TaskSize | null>({
+  get: () => task.value?.size ?? null,
+  set: (v) => { save({ size: v }) },
+})
 const tagIds = computed<string[]>({
   get: () => task.value?.tagIds ?? [],
   set: (value) => { save({ tagIds: value }) },
 })
+
+const KIND_ICON = { open: Circle, active: CircleDot, done: CircleCheck } as const
+
+const columnOptions = computed(() => {
+  const cols = [...store.visibleColumns]
+  const currentColumnId = task.value?.columnId
+  if (currentColumnId && !cols.some((c) => c.id === currentColumnId)) {
+    const current = store.columnById.get(currentColumnId)
+    if (current) cols.push(current)
+  }
+  return cols
+})
+
+const columnId = computed<string>({
+  get: () => task.value?.columnId ?? '',
+  set: (value) => {
+    if (!task.value || value === task.value.columnId) return
+    const toIndex = store.tasksByColumn(value).filter((t) => t.id !== task.value!.id).length
+    store.moveTask(task.value.id, value, toIndex)
+    announce(`Moved to ${store.columnById.get(value)?.name ?? ''}.`)
+  },
+})
+const currentColumnName = computed(() => store.columnById.get(columnId.value)?.name ?? '')
 
 // --- Title / description drafts ---------------------------------------
 
@@ -81,6 +115,8 @@ function loadDraftsFromTask() {
   titleDraft.value = task.value?.title ?? ''
   descriptionDraft.value = task.value?.description ?? ''
 }
+
+loadDraftsFromTask()
 
 function commitTitle() {
   if (!task.value) return
@@ -143,6 +179,8 @@ async function onAddSuggested(titles: string[]) {
   await store.addChecklistItems(task.value.id, titles)
 }
 
+const subtaskAi = ref<InstanceType<typeof AiSubtaskSuggestions> | null>(null)
+
 // --- Activity / events --------------------------------------------------
 
 const events = ref<StateEvent[]>([])
@@ -182,7 +220,8 @@ watch(
       if (newId) {
         await loadEvents(newId)
         await nextTick()
-        document.getElementById('task-panel-title')?.focus()
+        document.getElementById('task-panel-title')?.focus({ preventScroll: true })
+        revealCard(newId)
       }
       else {
         events.value = []
@@ -193,6 +232,15 @@ watch(
     }
   },
 )
+
+onMounted(async () => {
+  const id = taskId.value
+  if (!id) return
+  await loadEvents(id)
+  await nextTick()
+  document.getElementById('task-panel-title')?.focus({ preventScroll: true })
+  revealCard(id)
+})
 
 onBeforeUnmount(() => {
   if (taskId.value) flushDrafts(taskId.value)
@@ -205,7 +253,7 @@ async function closePanel() {
   closeTask()
   await nextTick()
   if (id) {
-    document.querySelector<HTMLElement>(`li[data-task-id="${id}"]`)?.focus()
+    document.querySelector<HTMLElement>(`[data-task-id="${id}"] [data-card-open]`)?.focus()
   }
 }
 
@@ -213,13 +261,26 @@ function onEscape(e: KeyboardEvent) {
   if (e.defaultPrevented) return
   closePanel()
 }
+
+function revealCard(id: string) {
+  if (!window.matchMedia('(min-width: 768px)').matches) return
+  const card = document.querySelector<HTMLElement>(`li[data-task-id="${id}"]`)
+  const panel = document.querySelector<HTMLElement>('aside[aria-labelledby="task-panel-title"]')
+  const scroller = document.querySelector<HTMLElement>('[data-board-scroller]')
+  if (!card || !panel || !scroller) return
+  const overlap = card.getBoundingClientRect().right - panel.getBoundingClientRect().left
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
+  if (overlap > 0) scroller.scrollBy({ left: overlap + 16, behavior })
+}
 </script>
 
 <template>
   <aside
     v-if="task"
+    :role="isMobile ? 'dialog' : 'complementary'"
+    :aria-modal="isMobile ? 'true' : undefined"
     aria-labelledby="task-panel-title"
-    class="flex flex-col bg-background max-md:fixed max-md:inset-0 max-md:z-50 md:relative md:h-full md:w-[28rem] md:shrink-0 md:border-l lg:w-[32rem]"
+    class="flex flex-col bg-background max-md:fixed max-md:inset-0 max-md:z-50 md:absolute md:inset-y-0 md:right-0 md:z-30 md:w-[28rem] md:border-l md:shadow-xl lg:w-[32rem] motion-safe:animate-in motion-safe:slide-in-from-right motion-safe:duration-150"
     @keydown.esc="onEscape"
   >
     <div class="flex h-12 shrink-0 items-center gap-2 border-b px-4">
@@ -249,9 +310,24 @@ function onEscape(e: KeyboardEvent) {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
+        <Select v-model="columnId">
+          <SelectTrigger size="sm" class="w-auto" :aria-label="`Column: ${currentColumnName}`">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="c in columnOptions" :key="c.id" :value="c.id">
+              <component :is="KIND_ICON[c.kind]" role="img" class="size-3.5 shrink-0 text-muted-foreground" :aria-label="COLUMN_KIND_LABELS[c.kind]" />
+              {{ c.name }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
         <ProjectPicker v-model="projectId" />
         <DeadlinePicker v-model="deadline" />
+        <SizePicker v-model="size" />
       </div>
+      <p v-if="size === 'xl'" class="text-xs text-muted-foreground">
+        XL tasks are hard to estimate — consider splitting into checklist items or separate tasks.
+      </p>
 
       <TagPicker v-model="tagIds" />
 
@@ -270,9 +346,15 @@ function onEscape(e: KeyboardEvent) {
       </div>
 
       <div class="space-y-2">
-        <ChecklistEditor :task-id="task.id" />
-        <AiSubtaskSuggestions :title="titleDraft" :description="descriptionDraft" @add="onAddSuggested" />
+        <ChecklistEditor :task-id="task.id">
+          <template #actions>
+            <AiButton label="Suggest sub-todos" :loading="subtaskAi?.loading ?? false" @click="subtaskAi?.run()" />
+          </template>
+        </ChecklistEditor>
+        <AiSubtaskSuggestions ref="subtaskAi" :title="titleDraft" :description="descriptionDraft" @add="onAddSuggested" />
       </div>
+
+      <TaskLinks :task-id="task.id" />
 
       <div class="space-y-2">
         <h3 class="text-sm font-medium">

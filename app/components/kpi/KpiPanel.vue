@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ClipboardCopyIcon } from '@lucide/vue'
+import { TASK_SIZE_LABELS, TASK_SIZES } from '#shared/types/domain'
 import { formatKpiSummary } from '#shared/utils/kpi-summary'
 import { useBoardStore } from '../../stores/board'
 import { useKpis } from '../../composables/useKpis'
@@ -31,6 +32,16 @@ async function copySummary(): Promise<void> {
 
 function fmtOptionalDays(value: number | null): string {
   return value === null ? '—' : `${value} d`
+}
+
+function fmtPercent(value: number | null): string {
+  return value === null ? '—' : `${Math.round(value * 100)}%`
+}
+
+function sizeCountsLabel(counts: Record<string, number>): string {
+  const parts = TASK_SIZES.map((s) => `${TASK_SIZE_LABELS[s]} ${counts[s]}`)
+  parts.push(`unsized ${counts.none}`)
+  return parts.join(' · ')
 }
 </script>
 
@@ -134,6 +145,29 @@ function fmtOptionalDays(value: number | null): string {
           <ProjectBreakdown :rows="report.projects" />
         </div>
       </template>
+
+      <Separator />
+      <div class="flex flex-col gap-2">
+        <h3 class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Size
+        </h3>
+        <div class="grid grid-cols-2 gap-3 md:grid-cols-3">
+          <KpiStat
+            label="Done (30d) effort"
+            :value="report.size.doneLast30Weight"
+            :hint="sizeCountsLabel(report.size.doneLast30)"
+          />
+          <KpiStat
+            label="WIP effort"
+            :value="report.size.wipWeight"
+          />
+          <KpiStat
+            label="Unsized open work"
+            :value="fmtPercent(report.size.unsizedShare)"
+          />
+        </div>
+        <ThroughputBars :weekly="report.throughput.weekly" metric="weight" unit="pts" />
+      </div>
     </template>
 
     <Separator />

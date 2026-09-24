@@ -16,6 +16,7 @@ const PERIODS: { key: PeriodKey; label: string }[] = [
 
 const store = useBoardStore()
 const { achievementSummary } = useAi()
+const { announce } = useLiveAnnouncer()
 
 const period = ref<PeriodKey>('last_30')
 const loading = ref(false)
@@ -64,10 +65,12 @@ async function run() {
   const periodLabel = PERIODS.find(p => p.key === period.value)?.label ?? 'Period'
   const projectId = store.projectFilter === null ? undefined : store.projectFilter
 
+  announce('Generating suggestions…')
   try {
     const result = await achievementSummary({ from, to, projectId, periodLabel })
     text.value = result.text
     count.value = result.count
+    announce(result.count === 0 ? 'No completed tasks in this period' : 'Summary ready')
   }
   catch (e) {
     errorText.value = extractErrorMessage(e)

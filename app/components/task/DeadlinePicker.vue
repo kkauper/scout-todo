@@ -23,7 +23,7 @@ function clear() {
 <template>
   <Popover v-model:open="open">
     <PopoverTrigger as-child>
-      <Button variant="outline" size="sm" aria-label="Deadline">
+      <Button variant="outline" size="sm" :aria-label="`Deadline: ${model ?? 'No deadline'}`">
         <CalendarDays />
         {{ model ?? 'No deadline' }}
       </Button>

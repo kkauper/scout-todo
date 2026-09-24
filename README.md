@@ -234,6 +234,8 @@ wrangler.jsonc               Cloudflare Worker config
 
 **Deployment**: See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
+**Accessibility**: See [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md) for the WCAG 2.2 AA target, keyboard shortcuts, and test status.
+
 **Workflow**: Claude Code agents and automation live in `CLAUDE.md` and `.claude/agents/`.
 
 ## License

@@ -29,7 +29,7 @@ app/
   assets/css/tailwind.css      tokens (shadcn vars + --swatch-* colors)
   components/ui/**             shadcn-vue generated — do not hand-edit except theming
   components/board/*.vue       KanbanBoard, BoardColumn, TaskCard, QuickAddTask
-  components/task/*.vue        TaskDialog, ProjectPicker, TagPicker, DeadlinePicker
+  components/task/*.vue        TaskDialog, ProjectPicker, TagPicker, DeadlinePicker, SizePicker, TaskLinks
   components/kpi/*.vue         KpiPanel, KpiStat, KpiStateBar, ThroughputBars
   components/common/*.vue      ColorBadge, ColorPicker
   stores/board.ts              Pinia store
@@ -40,6 +40,7 @@ shared/                        imported by app AND server (Nuxt 4 `#shared` alia
   utils/position.ts            fractional ordering
   utils/dates.ts               day math, overdue
   utils/kpi.ts                 KPI computation (pure)
+  utils/links.ts                task link normalize/group/isBlocked (pure)
 server/
   db/schema.ts                 Drizzle schema
   db/migrations/               drizzle-kit output (committed)
@@ -75,16 +76,27 @@ export type ColorKey = (typeof COLOR_KEYS)[number]
 
 export interface Project { id: string; name: string; color: ColorKey; createdAt: string; updatedAt: string }
 export interface Tag { id: string; name: string; color: ColorKey; createdAt: string }
+export const TASK_SIZES = ['xs', 's', 'm', 'l', 'xl'] as const
+export type TaskSize = (typeof TASK_SIZES)[number]
+export const TASK_SIZE_LABELS: Record<TaskSize, string>   // 'XS' | 'S' | 'M' | 'L' | 'XL'
+export const TASK_SIZE_HINTS: Record<TaskSize, string>    // short duration hint per size, shown next to the label in pickers
+export const TASK_SIZE_WEIGHTS: Record<TaskSize, number>  // { xs: 1, s: 2, m: 4, l: 8, xl: 16 } — relative effort, each size ≈ double the previous; used only for KPI sums
 export interface Task {
   id: string; title: string; description: string | null
   projectId: string | null; columnId: string; position: number
   deadline: string | null
+  size: TaskSize | null                        // optional t-shirt size; null = unsized
   createdAt: string; updatedAt: string; stateChangedAt: string; completedAt: string | null
   tagIds: string[]
 }
 export interface StateEvent { taskId: string; fromColumnId: string | null; toColumnId: string | null; toKind: ColumnKind; changedAt: string }
 // fromColumnId/toColumnId null when that column was later deleted (FK ON DELETE SET NULL).
-export interface BoardData { projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[] }
+
+export const TASK_LINK_TYPES = ['blocks', 'relates', 'duplicates'] as const
+export type TaskLinkType = (typeof TASK_LINK_TYPES)[number]
+export interface TaskLink { id: string; fromTaskId: string; toTaskId: string; type: TaskLinkType; createdAt: string }
+
+export interface BoardData { projects: Project[]; tags: Tag[]; tasks: Task[]; columns: BoardColumn[]; links: TaskLink[] }
 // columns sorted by position, includes hidden ones.
 ```
 
@@ -126,7 +138,7 @@ interface KpiReport {
   overdue: number
   cycleTime: { avgDays: number | null; medianDays: number | null; sample: number }   // kind-done tasks: completedAt - createdAt
   throughput: {
-    weekly: { weekStart: string; count: number }[]   // last `weeks` ISO weeks (Mon start, local), oldest first, includes current week
+    weekly: { weekStart: string; count: number; weight: number }[]   // last `weeks` ISO weeks (Mon start, local), oldest first, includes current week; weight = sum of TASK_SIZE_WEIGHTS for tasks completed that week, unsized = 0
     last30Days: number
     thisMonth: number
   }
@@ -136,6 +148,15 @@ interface KpiReport {
   }
   projects: { projectId: string | null; name: string; color: ColorKey | null; byKind: Record<ColumnKind, number>; total: number }[]
   // global only (empty array when scoped). Unassigned row: projectId null, name 'No project', color null. Sorted by total desc.
+  size: {
+    weights: Record<TaskSize, number>                          // TASK_SIZE_WEIGHTS, re-exported for convenience
+    wip: Record<TaskSize | 'none', number>                     // kind-active tasks by size
+    open: Record<TaskSize | 'none', number>                    // kind-open tasks by size
+    doneLast30: Record<TaskSize | 'none', number>              // completed in the same window as throughput.last30Days, by size
+    doneLast30Weight: number                                   // sum of TASK_SIZE_WEIGHTS over doneLast30 (unsized = 0)
+    wipWeight: number                                          // sum of TASK_SIZE_WEIGHTS over wip (unsized = 0)
+    unsizedShare: number | null                                // unsized / (open + wip) not-done tasks; null when there are none
+  }
 }
 ```
 Round day values to 1 decimal. Median of even sample = mean of middle two.
@@ -146,9 +167,14 @@ Round day values to 1 decimal. Median of even sample = mean of middle two.
 - `projects`: `id uuid pk defaultRandom`, `name text notNull unique`, `color text notNull default 'blue'`, `created_at timestamptz notNull defaultNow`, `updated_at timestamptz notNull defaultNow`
 - `tags`: `id uuid pk defaultRandom`, `name text notNull unique`, `color text notNull default 'slate'`, `created_at timestamptz notNull defaultNow`
 - `board_columns`: `id uuid pk defaultRandom`, `name text notNull`, `kind column_kind notNull`, `position double precision notNull default 1000`, `hidden boolean notNull default false`, `created_at timestamptz notNull defaultNow`, `updated_at timestamptz notNull defaultNow`
-- `tasks`: `id uuid pk defaultRandom`, `title text notNull`, `description text`, `project_id uuid references projects.id onDelete set null`, `column_id uuid notNull references board_columns.id onDelete restrict`, `position double precision notNull default 1000`, `deadline date (mode 'string')`, `created_at`, `updated_at`, `state_changed_at` (all timestamptz notNull defaultNow), `completed_at timestamptz`
+- `pgEnum('task_size', TASK_SIZES)`
+- `tasks`: `id uuid pk defaultRandom`, `title text notNull`, `description text`, `project_id uuid references projects.id onDelete set null`, `column_id uuid notNull references board_columns.id onDelete restrict`, `position double precision notNull default 1000`, `deadline date (mode 'string')`, `size task_size` (nullable), `created_at`, `updated_at`, `state_changed_at` (all timestamptz notNull defaultNow), `completed_at timestamptz`
   - indexes: `(column_id, position)`, `(project_id)`, `(completed_at)`
 - `task_tags`: `task_id` → tasks cascade, `tag_id` → tags cascade, composite pk
+- `pgEnum('task_link_type', TASK_LINK_TYPES)` — `blocks | relates | duplicates`
+- `task_links`: `id uuid pk defaultRandom`, `from_task_id uuid notNull` → tasks cascade, `to_task_id uuid notNull` → tasks cascade, `type task_link_type notNull`, `created_at timestamptz notNull defaultNow`
+  - unique index `(from_task_id, to_task_id, type)`, index `(to_task_id)`, check `from_task_id <> to_task_id`
+  - Semantics: `blocks` from A to B = "A blocks B" (B is blocked by A). `duplicates` from A to B = "A duplicates B". `relates` is symmetric and always stored with `from_task_id < to_task_id` (string compare) so a pair is only ever stored once. `shared/utils/links.ts` (pure, unit-tested): `normalizeLink(fromTaskId, toTaskId, type)` (null on self-link; sorts `relates` pairs), `groupLinksForTask(taskId, links)` → `{ blocks, blockedBy, relates, duplicates, duplicatedBy }` (each `{ link, otherTaskId }[]`), `isBlocked(taskId, links, isDone)` → true if any non-done `blocks` link points at the task.
 - `task_state_events`: `id uuid pk`, `task_id` → tasks cascade, `from_column_id uuid` → board_columns onDelete set null (nullable), `to_column_id uuid` → board_columns onDelete set null (nullable), `to_kind column_kind notNull`, `changed_at timestamptz notNull defaultNow`; index `(task_id, changed_at)`
   - Row written on create (from null) and on every column change (move, or column deletion moving its tasks). `to_kind` is the kind of the destination column at the time of the event, kept even if that column is later deleted (columns become null via FK, `to_kind` does not). Source for history/audit + future analytics.
 
@@ -160,7 +186,7 @@ All timestamptz columns use `{ withTimezone: true, mode: 'date' }`; mappers conv
 
 | Method | Path | Body / Query | Returns |
 |---|---|---|---|
-| GET | `/api/board` | — | `BoardData` (includes `columns`) |
+| GET | `/api/board` | — | `BoardData` (includes `columns`, `links`) |
 | POST | `/api/projects` | `{ name, color? }` | `Project` (409 on duplicate name) |
 | PATCH | `/api/projects/:id` | `{ name?, color? }` | `Project` |
 | DELETE | `/api/projects/:id` | — | 204 (tasks → unassigned) |
@@ -170,11 +196,14 @@ All timestamptz columns use `{ withTimezone: true, mode: 'date' }`; mappers conv
 | POST | `/api/columns` | `{ name (1..40), kind }` | `BoardColumn` (appended, position = max + 1000) |
 | PATCH | `/api/columns/:id` | `{ name?, kind?, hidden?, position? }` (≥1 field) | `BoardColumn` (kind change recomputes the column's tasks' `completed_at` via `kindAfterKindChange` semantics, one transaction) |
 | DELETE | `/api/columns/:id` | `?moveTo=<uuid>` | 204. 404 unknown id; 409 "Cannot delete the last column"; if column has tasks: `moveTo` required (400) and must be another existing column (400) — tasks are moved to the end of the target (positions after its max, relative order kept), `transitionPatch` applied per task, events written (one transaction) |
-| POST | `/api/tasks` | `{ title, description?, projectId?, columnId?, deadline?, tagIds? }` | `Task` (position = end of column; `columnId` defaults to the first non-hidden `open` column, else the first column; 400 on unknown `columnId`) |
-| PATCH | `/api/tasks/:id` | `{ title?, description?, projectId?, deadline?, tagIds? }` | `Task` (no column move here) |
+| POST | `/api/tasks` | `{ title, description?, projectId?, columnId?, deadline?, size?, tagIds? }` | `Task` (position = end of column; `columnId` defaults to the first non-hidden `open` column, else the first column; 400 on unknown `columnId`) |
+| PATCH | `/api/tasks/:id` | `{ title?, description?, projectId?, deadline?, size?, tagIds? }` | `Task` (no column move here; `size` accepts `TaskSize \| null`, zod 400 on invalid value) |
 | POST | `/api/tasks/:id/move` | `{ columnId, position }` | `Task` (400 unknown `columnId`; applies `transitionPatch`, writes event in same transaction) |
 | DELETE | `/api/tasks/:id` | — | 204 |
 | GET | `/api/tasks/:id/events` | — | `StateEvent[]` asc |
+| POST | `/api/tasks/:id/links` | `{ toTaskId, type: TaskLinkType }` | `TaskLink`, 201 (422 self-link or `blocks` cycle; 404 if either task isn't the caller's; 409 duplicate link) |
+| DELETE | `/api/links/:id` | — | 204 (404 unless the link's `from_task_id` task belongs to the caller) |
+| POST | `/api/checklist/:id/convert` | — | `{ task: Task, link: TaskLink, item: ChecklistItem }` — creates a task from the checklist item (title, parent's `projectId`, first open column), adds a `relates` link to the parent, marks the item done (404 unless the item's task belongs to the caller) |
 | GET | `/api/kpis` | `?projectId=<uuid>|none` | `KpiReport` |
 
 Validation errors → 400 via zod. Unknown id → 404. `updated_at` set on every mutation.
@@ -184,11 +213,15 @@ Analytics hook: server emits `useNitroApp().hooks.callHook('scout:task-moved', {
 
 ### Store `app/stores/board.ts` (`useBoardStore`, setup style)
 
-State: `projects`, `tags`, `tasks`, `columns: BoardColumn[]`, `projectFilter: string | null | 'none'` (null = all), `loaded`.
+State: `projects`, `tags`, `tasks`, `columns: BoardColumn[]`, `links: TaskLink[]`, `projectFilter: string | null | 'none'` (null = all), `loaded`.
 Getters: `projectById`, `tagById`, `columnById` (Map lookups); `sortedColumns` (by position, includes hidden), `visibleColumns` (not hidden), `hiddenColumns`; `visibleTasks`; `tasksByColumn(columnId)` (filtered by `visibleTasks`, sorted by position).
-Actions: `load()`, `createTask({ title, columnId?, projectId?, description?, deadline?, tagIds? })`, `updateTask`, `moveTask(id, toColumnId, toIndex)` (resolves `fromKind` from the task's current column, applies `transitionPatch`), `deleteTask`, `createProject`, `createTag`, `addChecklistItems`/`updateChecklistItem`/`deleteChecklistItem`, `fetchEvents`.
+Actions: `load()`, `createTask({ title, columnId?, projectId?, description?, deadline?, size?, tagIds? })`, `updateTask` (patch incl. `size?: TaskSize | null`), `moveTask(id, toColumnId, toIndex)` (resolves `fromKind` from the task's current column, applies `transitionPatch`), `deleteTask` (also drops local links referencing the task), `createProject`, `createTag`, `addChecklistItems`/`updateChecklistItem`/`deleteChecklistItem`, `fetchEvents`, `addLink(taskId, toTaskId, type)` (POST, pushes the returned `TaskLink`), `removeLink(id)` (optimistic filter, then DELETE), `convertChecklistItem(taskId, itemId)` (POST `/api/checklist/:id/convert`; upserts the new task, pushes the `relates` link, replaces the checklist item; returns the new `Task`).
 Column actions (all through the shared `run()` optimistic-then-reconcile wrapper, bump `revision`): `createColumn(name, kind)`, `updateColumn(id, patch: { name?; kind?; hidden?; position? })` (optimistic merge; reloads the whole board after a successful `kind` change since the server recomputes affected tasks' `completedAt`), `deleteColumn(id, moveTo?)` (always reloads the board after), `moveColumn(id, direction: -1 | 1)` (swaps with the neighbour in `sortedColumns` via a single `position` PATCH computed with `positionBetween` of the neighbour's neighbours).
 Mutations optimistic: apply locally (using `shared/` logic), call API, replace with server DTO; on error reload board and surface error.
+
+### Cross-tab sync (`app/plugins/board-sync.client.ts`)
+
+A client plugin keeps tabs of the same browser in sync without server involvement. Every successful mutation bumps `store.revision`; a watcher posts an `{ type: 'invalidate' }` message (tagged with a per-tab id) on a `BroadcastChannel('scout-board')`. Other tabs receiving that message (and the tab itself on `visibilitychange` back to visible, throttled to once per 5s) schedule a debounced (300ms) full `store.load()`. The debounce/drag/overlap state machine lives in `shared/utils/sync-scheduler.ts` (pure, unit-tested): bursts of invalidations coalesce into one reload, a reload is deferred while `useState('boardDragging')` is true and runs once right after the drag ends, and an invalidation arriving while a reload is already in flight causes exactly one follow-up reload instead of overlapping requests. `load()` never bumps `revision`, so a reload triggered by a remote message does not echo back out. Reloads are skipped entirely before the board has ever loaded (e.g. on `/login`) to avoid a redirect loop.
 
 ### Screen layout (`pages/index.vue`)
 
@@ -226,6 +259,8 @@ Columns themselves are rendered by `KanbanBoard.vue` from `store.visibleColumns`
 | Project / tag pick + inline create | `Popover` + `Command` (combobox; "Create “xyz”" item when no exact match) |
 | Color choice on inline create | `common/ColorPicker` (radio group of swatch buttons) |
 | Deadline | `Popover` + `Calendar` (`@internationalized/date`, CalendarDate ↔ `YYYY-MM-DD`) |
+| Task size | `task/SizePicker` — `Select`/`SelectTrigger` (size `sm`) / `SelectItem`; "No size" (`__none`) maps to `null`, other items show `LABEL — hint`; trigger shows just the label (or "Size" placeholder) |
+| Task links | `task/TaskLinks` — grouped list (Blocks / Blocked by / Relates to / Duplicates / Duplicated by) with a `Popover` "Add link" (type `Select` + task search `Input`, up to 8 results) |
 | Project filter | `Select` |
 | KPI panel | `Sheet`, `Card`, `Progress`, `Separator`, `Tooltip` |
 | Scroll areas | column `ul` scrolls itself (native overflow) |
@@ -249,12 +284,27 @@ Card title is plain text (not a button); renaming happens via a small ghost `Pen
 - Card focusable (`tabindex="0"`), Enter opens edit dialog; click anywhere on the card body (see above) does the same.
 - Color never sole carrier of meaning: badges always show text; overdue shows text "Overdue" + icon; column kind icon always pairs with a `Tooltip` + `aria-label` text.
 
+### Search palette (⌘K)
+
+Client-side fuzzy search over everything already in `store.tasks` — no server round-trip. `shared/utils/search.ts` (pure, unit-tested) builds a `SearchDoc` per task (`title`, `description`, `checklist` item titles, `project` name, `tag` names, `done`) via `toSearchDocs`, indexes it with `Fuse` (`createSearchIndex`; weighted keys — title 3, tags 2, project 2, checklist 1.5, description 1; `ignoreLocation`, `threshold: 0.35`, `minMatchCharLength: 2`), and ranks hits with `searchTasks(index, query, limit)`: queries under 2 chars return no hits; done tasks get a `+0.25` score penalty (lower = better) so an otherwise-equal open task ranks above a done one; the best-matching field (title > tags > project > checklist > description) drives the returned `field` and a ≤90-char `snippet` (title matches have no snippet — the title itself is highlighted instead).
+
+`app/components/common/SearchPalette.vue` renders the results in a `CommandDialog`. It intentionally does not use `CommandInput` (that component wires into the shadcn `Command` wrapper's own substring filter via `filterState.search`); instead it renders its own `ListboxFilter`-based input bound to a local `query` ref so our Fuse ranking is the only ranking in play, while still getting `ListboxRoot`'s arrow-key highlight/Enter-to-select/Escape-to-close for free. Each row shows the column-kind icon, the title with matched ranges wrapped in `<mark>` text nodes (never `v-html`), column + project name, and the snippet when present; done tasks render muted. No hits → a "Create task "…"" row that opens `TaskDialog` prefilled with the query; selecting a task that's outside the current project filter resets the filter before opening it in `TaskPanel` and scrolling its card into view. Opened via the header's Search button or the global `⌘K`/`Ctrl+K` shortcut (`useEventListener` on `window` in `pages/index.vue`).
+
 ## Sub-todos (checklist)
 
 - Table `checklist_items` (`id`, `task_id` → tasks cascade, `title`, `done`, `position`, `created_at`, `completed_at`); index `(task_id, position)`.
 - DTO `ChecklistItem`; embedded as `Task.checklist` (sorted by position), loaded in `/api/board` with one query.
 - API: `POST /api/tasks/:id/checklist { titles[] }`, `PATCH /api/checklist/:id { title?, done?, position? }`, `DELETE /api/checklist/:id`. Mutations bump parent `tasks.updated_at`.
 - UI: `board/CardChecklist` (progress `n/m` + expandable checkbox list on card), `task/ChecklistEditor` (dialog; draft mode before task exists).
+- "Convert to task": in existing-task mode, each non-done checklist row has a `SquareArrowOutUpRight` icon button (`store.convertChecklistItem(taskId, itemId)`) that turns it into a full task (`POST /api/checklist/:id/convert`, see Task links below) and marks the item done.
+
+## Task links (blocks / relates / duplicates)
+
+- Types (`shared/types/domain.ts`): `TASK_LINK_TYPES = ['blocks', 'relates', 'duplicates']`, `TaskLink { id, fromTaskId, toTaskId, type, createdAt }`; embedded in `BoardData.links` (loaded with `/api/board`, one query joined on `from_task_id`'s owner).
+- Pure logic + DB shape: see `shared/utils/links.ts` and the `task_links` table above.
+- API: `POST /api/tasks/:id/links`, `DELETE /api/links/:id`, `POST /api/checklist/:id/convert` (see API table above). `server/utils/columns.ts#defaultColumn(db, userId)` (first non-hidden `open` column by position, else the first column) backs both task creation (`POST /api/tasks`) and the convert endpoint.
+- Store: `board.links: TaskLink[]`, `addLink(taskId, toTaskId, type)`, `removeLink(id)`, `convertChecklistItem(taskId, itemId)` (see Store above).
+- UI: `task/TaskLinks` (in `TaskPanel`, between the checklist and Activity) groups links via `groupLinksForTask` and lets you open the other task, remove a link, or add one (Popover: type + fuzzy task search via `shared/utils/search.ts`). `board/TaskCard` shows a `Ban` icon (`role="img" aria-label="Blocked"`, title lists blocker titles) when `isBlocked(task.id, store.links, …)` is true — it clears once every blocking task's column is `kind: 'done'`.
 
 ## Auth
 

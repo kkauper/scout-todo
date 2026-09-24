@@ -97,12 +97,14 @@ async function onRemove() {
             autocomplete="off"
             placeholder="sk-ant-…"
             :disabled="pending"
+            :aria-invalid="!!error || undefined"
+            :aria-describedby="error ? 'ai-settings-error' : undefined"
           />
           <p class="text-xs text-muted-foreground">
             Stored encrypted on the server and only used for your requests. Create a key at console.anthropic.com.
           </p>
         </div>
-        <p v-if="error" role="alert" class="text-sm text-destructive">
+        <p v-if="error" id="ai-settings-error" role="alert" class="text-sm text-destructive">
           {{ error }}
         </p>
         <DialogFooter>

@@ -85,6 +85,15 @@ Then re-apply any local edits by diffing before and after.
 
 Prefer changing semantic tokens over editing component classes. shadcn components consume CSS variables, so token adjustments cascade.
 
+## Accessibility Tokens
+
+Contrast targets and measured ratios (computed via an oklch→sRGB WCAG contrast script; see `app/assets/css/tailwind.css` for current values):
+
+- **`--destructive` (text, light theme only)**: target ≥4.5:1 (normal text) on `--background`, `--card`, and on the `bg-destructive/10` error band composited over `--background`. Changed light `oklch(0.577 0.245 27.325)` → `oklch(0.45 0.245 27.325)` (same hue). Measured: background 5.61:1, card 6.27:1, `/10` band 4.68:1. Dark theme `--destructive` is unchanged (already passing: background 5.89:1, card 5.30:1, `/10` band 5.16:1).
+- **`--input` (non-text boundary)**: target ≥3:1 against both `--background` and `--card`/`--popover`. Changed light `#c9c8bd` → `#7e7d6b` (background 3.38:1, card 3.78:1). Changed dark `#41413e` → `#72726a` (background 3.51:1, card 3.16:1). `--border` is intentionally left unchanged (decorative separators, not relied on as the sole boundary of an interactive element, so the 3:1 non-text rule does not apply).
+- **KPI project-breakdown segment bars** (`app/components/kpi/ProjectBreakdown.vue`): each segment needs ≥3:1 against the `bg-muted` track. "Open" now renders full-opacity `bg-muted-foreground` (was `/40`): light 4.99:1, dark 5.60:1. "Active" and "done" use a darkened light-mode-only oklch value (`oklch(0.56 0.214 259.815)` blue, `oklch(0.5 0.219 149.579)` green) with a `dark:` override back to the shared `--swatch-blue`/`--swatch-green` tokens, which already pass in dark mode. Measured: active light 3.54:1 / dark 3.82:1; done light 3.72:1 / dark 6.47:1.
+- **Forced colors / reduced motion**: `app/assets/css/tailwind.css` adds an unlayered `@media (forced-colors: active)` rule forcing a visible `:focus-visible` outline (`CanvasText`), and an unlayered `@media (prefers-reduced-motion: reduce)` rule collapsing animation/transition/scroll durations. Both are declared outside any `@layer` so they win over layered utilities like `outline-none`/`outline-hidden` regardless of source order.
+
 ## Conventions
 
 1. **Color is never the sole carrier of meaning.** Badges always include text; overdue indicators show text + icon.

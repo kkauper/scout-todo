@@ -1,5 +1,5 @@
-import type { BoardColumn, ColorKey, ColumnKind, Project, Task } from '../types/domain'
-import { COLUMN_KINDS } from '../types/domain'
+import type { BoardColumn, ColorKey, ColumnKind, Project, Task, TaskSize } from '../types/domain'
+import { COLUMN_KINDS, TASK_SIZES, TASK_SIZE_WEIGHTS } from '../types/domain'
 import { daysBetween, localDateIso } from './dates'
 
 export interface KpiReport {
@@ -15,7 +15,7 @@ export interface KpiReport {
   overdue: number
   cycleTime: { avgDays: number | null; medianDays: number | null; sample: number }
   throughput: {
-    weekly: { weekStart: string; count: number }[]
+    weekly: { weekStart: string; count: number; weight: number }[]
     last30Days: number
     thisMonth: number
   }
@@ -24,6 +24,15 @@ export interface KpiReport {
     oldest: { taskId: string; title: string; columnName: string; days: number }[]
   }
   projects: { projectId: string | null; name: string; color: ColorKey | null; byKind: Record<ColumnKind, number>; total: number }[]
+  size: {
+    weights: Record<TaskSize, number>
+    wip: Record<TaskSize | 'none', number>
+    open: Record<TaskSize | 'none', number>
+    doneLast30: Record<TaskSize | 'none', number>
+    doneLast30Weight: number
+    wipWeight: number
+    unsizedShare: number | null
+  }
 }
 
 function round1(x: number): number {
@@ -34,6 +43,17 @@ function emptyByKind(): Record<ColumnKind, number> {
   const r = {} as Record<ColumnKind, number>
   for (const k of COLUMN_KINDS) r[k] = 0
   return r
+}
+
+function emptySizeCounts(): Record<TaskSize | 'none', number> {
+  const r = {} as Record<TaskSize | 'none', number>
+  for (const s of TASK_SIZES) r[s] = 0
+  r.none = 0
+  return r
+}
+
+function weightOf(size: TaskSize | null): number {
+  return size ? TASK_SIZE_WEIGHTS[size] : 0
 }
 
 function median(nums: number[]): number {
@@ -108,19 +128,21 @@ export function computeKpis(
   const avgDays = cycleDays.length ? round1(cycleDays.reduce((a, b) => a + b, 0) / cycleDays.length) : null
   const medianDays = cycleDays.length ? round1(median(cycleDays)) : null
 
-  const weekly: { weekStart: string; count: number }[] = []
+  const weekly: { weekStart: string; count: number; weight: number }[] = []
   const currentWeekStart = startOfLocalWeek(now)
   for (let i = weeks - 1; i >= 0; i--) {
     const start = new Date(currentWeekStart)
     start.setDate(start.getDate() - i * 7)
     const end = new Date(start)
     end.setDate(end.getDate() + 7)
-    const count = scoped.filter((t) => {
+    const weekTasks = scoped.filter((t) => {
       if (t.completedAt === null) return false
       const c = new Date(t.completedAt)
       return c >= start && c < end
-    }).length
-    weekly.push({ weekStart: localDateIso(start), count })
+    })
+    const count = weekTasks.length
+    const weight = weekTasks.reduce((sum, t) => sum + weightOf(t.size), 0)
+    weekly.push({ weekStart: localDateIso(start), count, weight })
   }
 
   const from30 = new Date(now.getTime() - 30 * 86_400_000)
@@ -139,6 +161,29 @@ export function computeKpis(
   const wipTasks = scoped.filter(t => kindOf(t) === 'active')
   const wipDays = wipTasks.map(t => daysBetween(t.stateChangedAt, now))
   const wipAvgDays = wipDays.length ? round1(wipDays.reduce((a, b) => a + b, 0) / wipDays.length) : null
+
+  const openTasks = scoped.filter(t => kindOf(t) === 'open')
+  const doneLast30Tasks = scoped.filter((t) => {
+    if (t.completedAt === null) return false
+    const c = new Date(t.completedAt)
+    return c > from30 && c <= now
+  })
+
+  const sizeWip = emptySizeCounts()
+  for (const t of wipTasks) sizeWip[t.size ?? 'none']++
+
+  const sizeOpen = emptySizeCounts()
+  for (const t of openTasks) sizeOpen[t.size ?? 'none']++
+
+  const sizeDoneLast30 = emptySizeCounts()
+  for (const t of doneLast30Tasks) sizeDoneLast30[t.size ?? 'none']++
+
+  const doneLast30Weight = doneLast30Tasks.reduce((sum, t) => sum + weightOf(t.size), 0)
+  const wipWeight = wipTasks.reduce((sum, t) => sum + weightOf(t.size), 0)
+
+  const notDoneCount = open + wip
+  const unsizedNotDone = sizeOpen.none + sizeWip.none
+  const unsizedShare = notDoneCount > 0 ? unsizedNotDone / notDoneCount : null
 
   const oldest = scoped
     .filter(t => kindOf(t) !== 'done')
@@ -193,5 +238,14 @@ export function computeKpis(
     throughput: { weekly, last30Days, thisMonth },
     aging: { wipAvgDays, oldest },
     projects: projectsOut,
+    size: {
+      weights: TASK_SIZE_WEIGHTS,
+      wip: sizeWip,
+      open: sizeOpen,
+      doneLast30: sizeDoneLast30,
+      doneLast30Weight,
+      wipWeight,
+      unsizedShare,
+    },
   }
 }

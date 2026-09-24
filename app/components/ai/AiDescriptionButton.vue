@@ -12,6 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{ result: [text: string] }>()
 
 const { draftDescription } = useAi()
+const { announce } = useLiveAnnouncer()
 
 const loading = ref(false)
 const errorText = ref<string | null>(null)
@@ -26,6 +27,7 @@ function extractErrorMessage(e: unknown): string {
 async function run() {
   loading.value = true
   errorText.value = null
+  announce('Generating suggestions…')
   try {
     const result = await draftDescription({
       title: props.title,
@@ -34,6 +36,7 @@ async function run() {
       existing: props.existing ?? null,
     })
     emit('result', result.text)
+    announce('Description drafted')
   }
   catch (e) {
     errorText.value = extractErrorMessage(e)

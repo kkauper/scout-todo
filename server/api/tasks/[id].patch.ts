@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { TASK_SIZES } from '#shared/types/domain'
 
 const paramsSchema = z.object({ id: z.uuid() })
 const bodySchema = z.object({
@@ -7,6 +8,7 @@ const bodySchema = z.object({
   description: z.string().max(5000).nullable().optional(),
   projectId: z.uuid().nullable().optional(),
   deadline: z.iso.date().nullable().optional(),
+  size: z.enum(TASK_SIZES).nullable().optional(),
   tagIds: z.array(z.uuid()).optional(),
 })
 

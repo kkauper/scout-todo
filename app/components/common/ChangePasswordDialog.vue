@@ -3,11 +3,14 @@ import { ref, watch } from 'vue'
 
 const open = defineModel<boolean>('open', { required: true })
 
+const { announce } = useLiveAnnouncer()
+
 const currentPassword = ref('')
 const newPassword = ref('')
 const repeatPassword = ref('')
 const pending = ref(false)
 const error = ref<string | null>(null)
+const errorField = ref<'current' | 'new' | 'repeat' | null>(null)
 const success = ref<string | null>(null)
 
 watch(open, (isOpen) => {
@@ -16,19 +19,23 @@ watch(open, (isOpen) => {
   newPassword.value = ''
   repeatPassword.value = ''
   error.value = null
+  errorField.value = null
   success.value = null
 })
 
 async function onSubmit() {
   error.value = null
+  errorField.value = null
   success.value = null
 
   if (newPassword.value.length < 12) {
     error.value = 'New password must be at least 12 characters'
+    errorField.value = 'new'
     return
   }
   if (newPassword.value !== repeatPassword.value) {
     error.value = 'Passwords do not match'
+    errorField.value = 'repeat'
     return
   }
 
@@ -39,11 +46,13 @@ async function onSubmit() {
       body: { currentPassword: currentPassword.value, newPassword: newPassword.value },
     })
     success.value = 'Password changed'
-    setTimeout(() => { open.value = false }, 1200)
+    announce('Password changed')
+    setTimeout(() => { open.value = false }, 3000)
   }
   catch (e) {
     const err = e as { data?: { statusMessage?: string } }
     error.value = err?.data?.statusMessage ?? 'Could not change password'
+    errorField.value = 'current'
   }
   finally {
     pending.value = false
@@ -70,6 +79,8 @@ async function onSubmit() {
             autocomplete="current-password"
             autofocus
             :disabled="pending"
+            :aria-invalid="errorField === 'current' || undefined"
+            :aria-describedby="errorField === 'current' ? 'change-password-error' : undefined"
           />
         </div>
         <div class="flex flex-col gap-1.5">
@@ -80,6 +91,8 @@ async function onSubmit() {
             type="password"
             autocomplete="new-password"
             :disabled="pending"
+            :aria-invalid="errorField === 'new' || undefined"
+            :aria-describedby="errorField === 'new' ? 'change-password-error' : undefined"
           />
         </div>
         <div class="flex flex-col gap-1.5">
@@ -90,9 +103,11 @@ async function onSubmit() {
             type="password"
             autocomplete="new-password"
             :disabled="pending"
+            :aria-invalid="errorField === 'repeat' || undefined"
+            :aria-describedby="errorField === 'repeat' ? 'change-password-error' : undefined"
           />
         </div>
-        <p v-if="error" role="alert" class="text-sm text-destructive">
+        <p v-if="error" id="change-password-error" role="alert" class="text-sm text-destructive">
           {{ error }}
         </p>
         <p v-if="success" class="text-sm text-muted-foreground">
@@ -100,7 +115,7 @@ async function onSubmit() {
         </p>
         <DialogFooter>
           <Button type="button" variant="outline" :disabled="pending" @click="open = false">
-            Cancel
+            {{ success ? 'Close' : 'Cancel' }}
           </Button>
           <Button type="submit" :disabled="pending">
             {{ pending ? 'Saving…' : 'Change password' }}

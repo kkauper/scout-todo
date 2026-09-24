@@ -66,9 +66,9 @@
     --muted-foreground: #5c5b55;
     --accent: #d7d6cc;
     --accent-foreground: #1c1c1c;
-    --destructive: oklch(0.577 0.245 27.325);
+    --destructive: oklch(0.45 0.245 27.325);
     --border: #d0cfc4;
-    --input: #c9c8bd;
+    --input: #7e7d6b;
     --ring: #1c1c1c;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -107,7 +107,7 @@
     --accent-foreground: #e8e8dd;
     --destructive: oklch(0.704 0.191 22.216);
     --border: #383836;
-    --input: #41413e;
+    --input: #72726a;
     --ring: #ddfe5a;
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
@@ -158,5 +158,22 @@
   label[for],
   select {
     cursor: pointer;
+  }
+}
+
+/* Unlayered: wins over @layer utilities (outline-none/outline-hidden) regardless of source order. */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText !important;
+    outline-offset: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
