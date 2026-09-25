@@ -174,6 +174,22 @@ export const useBoardStore = defineStore('board', () => {
     timeTotals.value[entry.taskId] = Math.max(0, (timeTotals.value[entry.taskId] ?? 0) - seconds)
   }
 
+  async function updateTimeEntry(entry: TimeEntry, patch: { startedAt?: string; endedAt?: string }): Promise<TimeEntry | undefined> {
+    const result = await run(() => $fetch<TimeEntry>(`/api/time-entries/${entry.id}`, { method: 'PATCH', body: patch }))
+    if (!result) return undefined
+
+    const oldSec = entry.endedAt ? durationSeconds(entry.startedAt, entry.endedAt) : 0
+    const newSec = result.endedAt ? durationSeconds(result.startedAt, result.endedAt) : 0
+    timeTotals.value[entry.taskId] = Math.max(0, (timeTotals.value[entry.taskId] ?? 0) - oldSec + newSec)
+
+    if (runningTimer.value?.entryId === entry.id) {
+      if (result.endedAt) runningTimer.value = null
+      else runningTimer.value = { ...runningTimer.value, startedAt: result.startedAt }
+    }
+
+    return result
+  }
+
   async function fetchTimeEntries(taskId: string): Promise<TimeEntry[]> {
     return await $fetch<TimeEntry[]>(`/api/tasks/${taskId}/time-entries`)
   }
@@ -485,6 +501,7 @@ export const useBoardStore = defineStore('board', () => {
     heartbeat,
     addTime,
     deleteTimeEntry,
+    updateTimeEntry,
     fetchTimeEntries,
     addLink,
     removeLink,

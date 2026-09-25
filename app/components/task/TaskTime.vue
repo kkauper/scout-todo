@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ChevronRight, Play, Plus, Square, X } from '@lucide/vue'
+import { ChevronRight, Pencil, Play, Plus, Square, X } from '@lucide/vue'
 import type { TimeEntry } from '#shared/types/domain'
-import { TIMER_MIN_ENTRY_SECONDS } from '#shared/types/domain'
-import { durationSeconds, formatClock, formatDuration, taskTrackedSeconds } from '#shared/utils/timer'
+import { ENTRY_TIMES_ERROR_MESSAGES, TIMER_MIN_ENTRY_SECONDS } from '#shared/types/domain'
+import { durationSeconds, formatClock, formatDuration, fromDateTimeLocalValue, taskTrackedSeconds, toDateTimeLocalValue, validateEntryTimes } from '#shared/utils/timer'
 import { useBoardStore } from '../../stores/board'
 import { useLiveAnnouncer } from '../../composables/useLiveAnnouncer'
 
@@ -87,6 +87,79 @@ async function deleteEntry(entry: TimeEntry, index: number) {
   const el = next ? document.getElementById(`time-entry-delete-${next.id}`) : null
   if (el) el.focus()
   else startStopButtonRef.value?.$el?.focus()
+}
+
+// --- Edit ------------------------------------------------------------------
+
+const editingId = ref<string | null>(null)
+const startDraft = ref('')
+const endDraft = ref('')
+const editError = ref<string | null>(null)
+const saving = ref(false)
+
+const draftStart = computed(() => fromDateTimeLocalValue(startDraft.value))
+const draftEnd = computed(() => fromDateTimeLocalValue(endDraft.value))
+const draftSeconds = computed(() => draftStart.value && draftEnd.value
+  ? durationSeconds(draftStart.value.toISOString(), draftEnd.value.toISOString())
+  : null)
+
+const editingEntry = computed(() => entries.value.find((e) => e.id === editingId.value) ?? null)
+
+const deltaSeconds = computed(() => editingEntry.value && draftSeconds.value !== null
+  ? draftSeconds.value - durationSeconds(editingEntry.value.startedAt, editingEntry.value.endedAt!)
+  : 0)
+const saveLabel = computed(() => Math.abs(deltaSeconds.value) >= 7200
+  ? `Save (${deltaSeconds.value < 0 ? '−' : '+'}${formatDuration(Math.abs(deltaSeconds.value))})`
+  : 'Save')
+
+watch(() => props.taskId, () => { editingId.value = null })
+
+async function startEdit(entry: TimeEntry) {
+  editingId.value = entry.id
+  startDraft.value = toDateTimeLocalValue(entry.startedAt)
+  endDraft.value = toDateTimeLocalValue(entry.endedAt!)
+  editError.value = null
+  await nextTick()
+  document.getElementById(`time-entry-start-${entry.id}`)?.focus()
+}
+
+async function cancelEdit() {
+  const id = editingId.value
+  editingId.value = null
+  editError.value = null
+  await nextTick()
+  if (id) document.getElementById(`time-entry-edit-${id}`)?.focus()
+}
+
+async function saveEdit() {
+  const entry = editingEntry.value
+  if (!entry || saving.value) return
+
+  const start = draftStart.value
+  const end = draftEnd.value
+  if (!start || !end) {
+    editError.value = 'Enter a valid start and end.'
+    return
+  }
+
+  const err = validateEntryTimes(start, end, new Date())
+  if (err) {
+    editError.value = ENTRY_TIMES_ERROR_MESSAGES[err]
+    return
+  }
+
+  saving.value = true
+  const result = await store.updateTimeEntry(entry, { startedAt: start.toISOString(), endedAt: end.toISOString() })
+  saving.value = false
+
+  if (!result) {
+    editError.value = store.lastError ?? 'Couldn\'t save the entry.'
+    return
+  }
+
+  announce(`Entry updated, ${formatDuration(durationSeconds(result.startedAt, result.endedAt!))}`)
+  await loadEntries()
+  await cancelEdit()
 }
 
 // --- Quick add -------------------------------------------------------------
@@ -215,19 +288,73 @@ async function addCustom() {
       <CollapsibleContent>
         <ul class="space-y-1 pt-1" role="list">
           <li v-for="(entry, i) in entries" :key="entry.id" class="flex items-center gap-2 text-xs text-muted-foreground">
-            <span class="flex-1">{{ entryLabel(entry) }}</span>
-            <Button
-              v-if="entry.endedAt !== null"
-              :id="`time-entry-delete-${entry.id}`"
-              type="button"
-              variant="ghost"
-              size="icon"
-              class="size-6 shrink-0"
-              :aria-label="`Delete entry ${entryLabel(entry)}`"
-              @click="deleteEntry(entry, i)"
-            >
-              <X class="size-3.5" />
-            </Button>
+            <template v-if="editingId !== entry.id">
+              <span class="flex-1">{{ entryLabel(entry) }}</span>
+              <Button
+                v-if="entry.endedAt !== null"
+                :id="`time-entry-edit-${entry.id}`"
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="size-6 shrink-0"
+                :aria-label="`Edit entry ${entryLabel(entry)}`"
+                @click="startEdit(entry)"
+              >
+                <Pencil class="size-3.5" />
+              </Button>
+              <Button
+                v-if="entry.endedAt !== null"
+                :id="`time-entry-delete-${entry.id}`"
+                type="button"
+                variant="ghost"
+                size="icon"
+                class="size-6 shrink-0"
+                :aria-label="`Delete entry ${entryLabel(entry)}`"
+                @click="deleteEntry(entry, i)"
+              >
+                <X class="size-3.5" />
+              </Button>
+            </template>
+            <form v-else class="w-full space-y-2 py-1" @submit.prevent="saveEdit" @keydown.esc.prevent.stop="cancelEdit">
+              <div class="flex flex-col gap-2 sm:flex-row">
+                <div class="space-y-1">
+                  <Label :for="`time-entry-start-${entry.id}`">Start</Label>
+                  <Input
+                    :id="`time-entry-start-${entry.id}`"
+                    v-model="startDraft"
+                    type="datetime-local"
+                    step="60"
+                    :aria-invalid="editError ? 'true' : undefined"
+                    :aria-describedby="editError ? `time-entry-edit-error-${entry.id}` : undefined"
+                  />
+                </div>
+                <div class="space-y-1">
+                  <Label :for="`time-entry-end-${entry.id}`">End</Label>
+                  <Input
+                    :id="`time-entry-end-${entry.id}`"
+                    v-model="endDraft"
+                    type="datetime-local"
+                    step="60"
+                    :aria-invalid="editError ? 'true' : undefined"
+                    :aria-describedby="editError ? `time-entry-edit-error-${entry.id}` : undefined"
+                  />
+                </div>
+              </div>
+              <p class="text-xs text-muted-foreground tabular-nums">
+                Duration: {{ draftSeconds !== null && draftSeconds >= 0 ? formatDuration(draftSeconds) : '—' }}
+              </p>
+              <p v-if="editError" :id="`time-entry-edit-error-${entry.id}`" role="alert" class="text-xs text-destructive">
+                {{ editError }}
+              </p>
+              <div class="flex gap-2">
+                <Button type="submit" size="sm" :disabled="saving">
+                  {{ saveLabel }}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" @click="cancelEdit">
+                  Cancel
+                </Button>
+              </div>
+            </form>
           </li>
         </ul>
       </CollapsibleContent>

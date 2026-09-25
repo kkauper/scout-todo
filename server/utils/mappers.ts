@@ -1,5 +1,5 @@
 import { and, asc, eq } from 'drizzle-orm'
-import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task, TaskLink, TaskLinkType, TimeEntry } from '#shared/types/domain'
+import type { BoardColumn, ChecklistItem, ColorKey, Project, Tag, Task, TaskLink, TaskLinkType, TimeEntry, TimeEntrySource } from '#shared/types/domain'
 import * as schema from '../db/schema'
 import type { useDb } from './db'
 
@@ -90,6 +90,10 @@ export function toTimeEntry(row: TimeEntryRow): TimeEntry {
     startedAt: row.startedAt.toISOString(),
     endedAt: row.endedAt ? row.endedAt.toISOString() : null,
     lastSeenAt: row.lastSeenAt.toISOString(),
+    source: row.source as TimeEntrySource,
+    editedAt: row.editedAt ? row.editedAt.toISOString() : null,
+    originalStartedAt: row.originalStartedAt ? row.originalStartedAt.toISOString() : null,
+    originalEndedAt: row.originalEndedAt ? row.originalEndedAt.toISOString() : null,
   }
 }
 

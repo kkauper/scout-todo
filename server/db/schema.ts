@@ -14,11 +14,12 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
-import { COLUMN_KINDS, TASK_LINK_TYPES, TASK_SIZES } from '../../shared/types/domain'
+import { COLUMN_KINDS, TASK_LINK_TYPES, TASK_SIZES, TIME_ENTRY_SOURCES } from '../../shared/types/domain'
 
 export const columnKind = pgEnum('column_kind', COLUMN_KINDS)
 export const taskSize = pgEnum('task_size', TASK_SIZES)
 export const taskLinkType = pgEnum('task_link_type', TASK_LINK_TYPES)
+export const timeEntrySource = pgEnum('time_entry_source', TIME_ENTRY_SOURCES)
 
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -122,6 +123,10 @@ export const timeEntries = pgTable('time_entries', {
   startedAt: timestamp('started_at', { withTimezone: true, mode: 'date' }).notNull(),
   endedAt: timestamp('ended_at', { withTimezone: true, mode: 'date' }),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'date' }).notNull(),
+  source: timeEntrySource('source').notNull().default('timer'),
+  editedAt: timestamp('edited_at', { withTimezone: true, mode: 'date' }),
+  originalStartedAt: timestamp('original_started_at', { withTimezone: true, mode: 'date' }),
+  originalEndedAt: timestamp('original_ended_at', { withTimezone: true, mode: 'date' }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).notNull().defaultNow(),
 }, (t) => [
   index('time_entries_task_id_idx').on(t.taskId),

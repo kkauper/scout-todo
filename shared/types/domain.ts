@@ -53,7 +53,23 @@ export interface TaskLink { id: string; fromTaskId: string; toTaskId: string; ty
 export const TIMER_STALE_AFTER_MS = 10 * 60_000
 export const TIMER_HEARTBEAT_MS = 60_000
 export const TIMER_MIN_ENTRY_SECONDS = 60
-export interface TimeEntry { id: string; taskId: string; startedAt: string; endedAt: string | null; lastSeenAt: string }
+/** Longest duration an edited entry may have. Matches the manual-add cap (1440 min). */
+export const TIMER_MAX_EDIT_SECONDS = 24 * 3600
+/** Tolerance for client/server clock skew when rejecting future timestamps. */
+export const TIMER_FUTURE_TOLERANCE_MS = 60_000
+export const TIME_ENTRY_SOURCES = ['timer', 'manual'] as const
+export type TimeEntrySource = (typeof TIME_ENTRY_SOURCES)[number]
+export type EntryTimesError = 'future' | 'end_before_start' | 'too_short' | 'too_long'
+export const ENTRY_TIMES_ERROR_MESSAGES: Record<EntryTimesError, string> = {
+  future: 'Times can\'t be in the future.',
+  end_before_start: 'End must be after start.',
+  too_short: 'Entries must be at least 1 minute.',
+  too_long: 'Entries can be at most 24 hours.',
+}
+export interface TimeEntry {
+  id: string; taskId: string; startedAt: string; endedAt: string | null; lastSeenAt: string
+  source: TimeEntrySource; editedAt: string | null; originalStartedAt: string | null; originalEndedAt: string | null
+}
 export interface RunningTimer { entryId: string; taskId: string; startedAt: string; lastSeenAt: string }
 export interface TimerState {
   running: RunningTimer | null

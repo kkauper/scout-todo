@@ -23,7 +23,7 @@ export default defineEventHandler(async (event): Promise<TimeEntry> => {
     const startedAt = new Date(now.getTime() - body.minutes * 60_000)
     const [inserted] = await tx
       .insert(schema.timeEntries)
-      .values({ userId, taskId: id, startedAt, endedAt: now, lastSeenAt: now })
+      .values({ userId, taskId: id, startedAt, endedAt: now, lastSeenAt: now, source: 'manual' })
       .returning()
     if (!inserted) throw createError({ statusCode: 500, statusMessage: 'Insert failed' })
 

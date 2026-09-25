@@ -287,6 +287,60 @@ describe('multi-user isolation', () => {
     const stopAlice = await api(aliceCookie, 'DELETE', '/api/timer')
     expect(stopAlice.status).toBe(200)
   })
+
+  it('12. time entry edit: source, ownership, original values, validation', async () => {
+    const createRes = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/time-entries`, { minutes: 30 })
+    expect(createRes.status).toBe(201)
+    const entry = createRes.json
+    expect(entry.source).toBe('manual')
+    expect(entry.editedAt).toBeNull()
+
+    const bobPatch = await api(bobCookie, 'PATCH', `/api/time-entries/${entry.id}`, { startedAt: entry.startedAt })
+    expect(bobPatch.status).toBe(404)
+
+    const newStartedAt = new Date(new Date(entry.startedAt).getTime() - 15 * 60_000).toISOString()
+    const firstEdit = await api(aliceCookie, 'PATCH', `/api/time-entries/${entry.id}`, { startedAt: newStartedAt })
+    expect(firstEdit.status).toBe(200)
+    expect(firstEdit.json.editedAt).not.toBeNull()
+    expect(firstEdit.json.originalStartedAt).toBe(entry.startedAt)
+    expect(firstEdit.json.originalEndedAt).toBe(entry.endedAt)
+
+    const newEndedAt = new Date(new Date(entry.endedAt).getTime() - 5 * 60_000).toISOString()
+    const secondEdit = await api(aliceCookie, 'PATCH', `/api/time-entries/${entry.id}`, { endedAt: newEndedAt })
+    expect(secondEdit.status).toBe(200)
+    expect(secondEdit.json.originalStartedAt).toBe(entry.startedAt)
+
+    const endBeforeStart = new Date(new Date(secondEdit.json.startedAt).getTime() - 60_000).toISOString()
+    const endBeforeStartRes = await api(aliceCookie, 'PATCH', `/api/time-entries/${entry.id}`, { endedAt: endBeforeStart })
+    expect(endBeforeStartRes.status).toBe(422)
+
+    const futureEnd = new Date(Date.now() + 3600_000).toISOString()
+    const futureRes = await api(aliceCookie, 'PATCH', `/api/time-entries/${entry.id}`, { endedAt: futureEnd })
+    expect(futureRes.status).toBe(422)
+
+    const emptyBody = await api(aliceCookie, 'PATCH', `/api/time-entries/${entry.id}`, {})
+    expect(emptyBody.status).toBe(400)
+
+    const startRunning = await api(aliceCookie, 'POST', `/api/tasks/${aliceTaskId}/timer`)
+    expect(startRunning.status).toBe(200)
+    const runningEntryId = startRunning.json.running.entryId
+
+    const pastStart = new Date(Date.now() - 2 * 3600_000).toISOString()
+    const patchRunningStart = await api(aliceCookie, 'PATCH', `/api/time-entries/${runningEntryId}`, { startedAt: pastStart })
+    expect(patchRunningStart.status).toBe(200)
+    expect(patchRunningStart.json.endedAt).toBeNull()
+
+    const pastEnd = new Date(Date.now() - 3600_000).toISOString()
+    const patchRunningEnd = await api(aliceCookie, 'PATCH', `/api/time-entries/${runningEntryId}`, { endedAt: pastEnd })
+    expect(patchRunningEnd.status).toBe(200)
+    expect(patchRunningEnd.json.endedAt).not.toBeNull()
+
+    const boardAfterStop = await api(aliceCookie, 'GET', '/api/board')
+    expect(boardAfterStop.json.runningTimer).toBeNull()
+
+    await api(aliceCookie, 'DELETE', `/api/time-entries/${entry.id}`)
+    await api(aliceCookie, 'DELETE', `/api/time-entries/${runningEntryId}`)
+  })
 })
 
 describe('session revocation', () => {

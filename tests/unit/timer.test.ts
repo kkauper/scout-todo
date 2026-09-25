@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isStale, durationSeconds, formatDuration, formatClock, taskTrackedSeconds, isDiscardable } from '../../shared/utils/timer'
+import { isStale, durationSeconds, formatDuration, formatClock, taskTrackedSeconds, isDiscardable, validateEntryTimes, toDateTimeLocalValue, fromDateTimeLocalValue } from '../../shared/utils/timer'
 import { TIMER_STALE_AFTER_MS } from '../../shared/types/domain'
 import type { RunningTimer } from '../../shared/types/domain'
 
@@ -160,5 +160,91 @@ describe('taskTrackedSeconds', () => {
     }
     // elapsed should be capped at lastSeenAt - startedAt = 300s, ignoring the much larger now - startedAt
     expect(taskTrackedSeconds(TASK_A, totals, running, NOW)).toBe(300)
+  })
+})
+
+describe('validateEntryTimes', () => {
+  it('valid 1 h entry -> null', () => {
+    const startedAt = new Date(NOW.getTime() - 2 * 3600_000)
+    const endedAt = new Date(NOW.getTime() - 3600_000)
+    expect(validateEntryTimes(startedAt, endedAt, NOW)).toBeNull()
+  })
+
+  it('running entry with past start -> null', () => {
+    const startedAt = new Date(NOW.getTime() - 3600_000)
+    expect(validateEntryTimes(startedAt, null, NOW)).toBeNull()
+  })
+
+  it('start 2 min in future -> \'future\'', () => {
+    const startedAt = new Date(NOW.getTime() + 2 * 60_000)
+    expect(validateEntryTimes(startedAt, null, NOW)).toBe('future')
+  })
+
+  it('end 2 min in future -> \'future\'', () => {
+    const startedAt = new Date(NOW.getTime() - 3600_000)
+    const endedAt = new Date(NOW.getTime() + 2 * 60_000)
+    expect(validateEntryTimes(startedAt, endedAt, NOW)).toBe('future')
+  })
+
+  it('end 30 s in future -> null (tolerance)', () => {
+    const startedAt = new Date(NOW.getTime() - 3600_000)
+    const endedAt = new Date(NOW.getTime() + 30_000)
+    expect(validateEntryTimes(startedAt, endedAt, NOW)).toBeNull()
+  })
+
+  it('end < start -> \'end_before_start\'', () => {
+    const startedAt = NOW
+    const endedAt = new Date(NOW.getTime() - 1_000)
+    expect(validateEntryTimes(startedAt, endedAt, NOW)).toBe('end_before_start')
+  })
+
+  it('59 s -> \'too_short\'', () => {
+    const startedAt = new Date(NOW.getTime() - 59_000)
+    expect(validateEntryTimes(startedAt, NOW, NOW)).toBe('too_short')
+  })
+
+  it('exactly 60 s -> null', () => {
+    const startedAt = new Date(NOW.getTime() - 60_000)
+    expect(validateEntryTimes(startedAt, NOW, NOW)).toBeNull()
+  })
+
+  it('exactly 24 h -> null', () => {
+    const startedAt = new Date(NOW.getTime() - 24 * 3600_000)
+    expect(validateEntryTimes(startedAt, NOW, NOW)).toBeNull()
+  })
+
+  it('24 h + 1 s -> \'too_long\'', () => {
+    const startedAt = new Date(NOW.getTime() - (24 * 3600_000 + 1_000))
+    expect(validateEntryTimes(startedAt, NOW, NOW)).toBe('too_long')
+  })
+
+  it('entry crossing midnight (23:30 -> 00:45 next day) -> null', () => {
+    const startedAt = new Date(2026, 8, 23, 23, 30, 0)
+    const endedAt = new Date(2026, 8, 24, 0, 45, 0)
+    expect(validateEntryTimes(startedAt, endedAt, endedAt)).toBeNull()
+  })
+
+  it('accepts ISO strings as well as Dates', () => {
+    const startedAt = new Date(NOW.getTime() - 3600_000)
+    const endedAt = new Date(NOW.getTime() - 60_000)
+    expect(validateEntryTimes(startedAt.toISOString(), endedAt.toISOString(), NOW)).toBeNull()
+  })
+})
+
+describe('dateTimeLocal helpers', () => {
+  it('round-trips through fromDateTimeLocalValue(toDateTimeLocalValue(iso)), truncated to the minute', () => {
+    const iso = new Date(2026, 8, 23, 14, 37, 42, 123).toISOString()
+    const value = toDateTimeLocalValue(iso)
+    const back = fromDateTimeLocalValue(value)
+    const truncated = new Date(2026, 8, 23, 14, 37, 0, 0)
+    expect(back?.getTime()).toBe(truncated.getTime())
+  })
+
+  it('empty string -> null', () => {
+    expect(fromDateTimeLocalValue('')).toBeNull()
+  })
+
+  it('garbage -> null', () => {
+    expect(fromDateTimeLocalValue('garbage')).toBeNull()
   })
 })
