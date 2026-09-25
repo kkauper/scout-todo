@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "remote-scout",
+  "identifier": "remote-localhost-dev",
   "description": "IPC allowed from the live Scout site: report timer state, listen for tray actions",
   "windows": ["main"],
-  "remote": { "urls": ["https://scout.kauper.co"] },
+  "remote": { "urls": ["http://localhost:3000"] },
   "permissions": ["allow-timer-changed", "core:event:allow-listen", "core:event:allow-unlisten"]
 }

@@ -131,6 +131,9 @@ importers:
       '@pinia/nuxt':
         specifier: ^1.0.2
         version: 1.0.2(magic-string@1.4.1)(magicast@0.5.5)(pinia@4.0.3(@vue/devtools-api@8.2.1)(typescript@6.0.3)(vue@3.5.43(typescript@6.0.3)))(rolldown@1.2.9)(unplugin@3.4.0(esbuild@0.28.2)(rolldown@1.2.9)(rollup@4.63.4)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)(stylus@0.57.0(supports-color@10.2.2))(terser@5.51.2)(tsx@4.23.15)))
+      '@tauri-apps/api':
+        specifier: ^2.11.1
+        version: 2.11.1
       '@vueuse/core':
         specifier: ^15.0.0
         version: 15.0.0(vue@3.5.43(typescript@6.0.3))
@@ -1971,6 +1974,9 @@ packages:
     resolution: {integrity: sha512-AG8sI+6nfrDvN6ixuHJL9LaJTf3//0V5VITZYW3UOaIuSVexnEzsbMu4LH/JhMfRTxwhUXPnLqkl1DlzkZbRtg==}
     peerDependencies:
       vue: ^2.7.0 || ^3.0.0
+
+  '@tauri-apps/api@2.11.1':
+    resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
 
   '@ts-morph/common@0.29.0':
     resolution: {integrity: sha512-35oUmphHbJvQ/+UTwFNme/t2p3FoKiGJ5auTjjpNTop2dyREspirjMy82PLSC1pnDJ8ah1GU98hwpVt64YXQsg==}
@@ -7258,6 +7264,8 @@ snapshots:
     dependencies:
       '@tanstack/virtual-core': 3.17.11
       vue: 3.5.43(typescript@6.0.3)
+
+  '@tauri-apps/api@2.11.1': {}
 
   '@ts-morph/common@0.29.0':
     dependencies:

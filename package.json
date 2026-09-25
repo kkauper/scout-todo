@@ -32,6 +32,7 @@
     "@internationalized/date": "^3.12.4",
     "@lucide/vue": "^1.47.0",
     "@pinia/nuxt": "^1.0.2",
+    "@tauri-apps/api": "^2.11.1",
     "@vueuse/core": "^15.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -1,7 +1,7 @@
 fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new()
-            .app_manifest(tauri_build::AppManifest::new().commands(&["ping"])),
+            .app_manifest(tauri_build::AppManifest::new().commands(&["timer_changed"])),
     )
     .expect("failed to run tauri-build");
 }

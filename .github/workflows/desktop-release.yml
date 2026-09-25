@@ -1,0 +1,34 @@
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'desktop/src-tauri -> target.nosync'
+      - name: Check version matches tag
+        run: |
+          conf=$(jq -r .version desktop/src-tauri/tauri.conf.json)
+          tag="${GITHUB_REF_NAME#desktop-v}"
+          if [ "$conf" != "$tag" ]; then echo "tauri.conf.json version $conf != tag $tag"; exit 1; fi
+      - name: Build dmg
+        working-directory: desktop/src-tauri
+        run: npx --yes @tauri-apps/cli@2 build --bundles dmg
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" desktop/src-tauri/target.nosync/release/bundle/dmg/*.dmg \
+            --draft \
+            --title "Scout Desktop ${GITHUB_REF_NAME#desktop-v}" \
+            --notes "macOS (Apple Silicon). Unsigned: after installing, open System Settings → Privacy & Security → Open Anyway."

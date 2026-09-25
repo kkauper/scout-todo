@@ -178,6 +178,32 @@ pnpm run deploy
 
 Apply new migrations to the production database before deploying code that depends on them. Migrations that add a new table also create its `scout_app` policies when that role already exists — see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for details.
 
+## Desktop app (macOS)
+
+A native wrapper around scout.kauper.co (built with Tauri) that adds a menu bar timer: it shows the elapsed time for a running timer and lets you stop it without switching to the app.
+
+Download the latest `.dmg` from [GitHub Releases](../../releases). The app is unsigned, so on first open macOS will block it — either go to System Settings → Privacy & Security → "Open Anyway", or run:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Scout.app
+```
+
+Build locally:
+
+```bash
+source ~/.cargo/env
+cd desktop/src-tauri
+cargo tauri build --bundles dmg
+```
+
+Release a new version: bump the version in `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`, tag `desktop-vX.Y.Z`, push the tag, then publish the draft release that GitHub Actions creates.
+
+Run against the local dev server instead of the live site:
+
+```bash
+SCOUT_URL=http://localhost:3000 cargo tauri dev
+```
+
 ## Scripts
 
 | Script | Purpose |
