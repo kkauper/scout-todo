@@ -28,7 +28,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" desktop/src-tauri/target.nosync/release/bundle/dmg/*.dmg \
+          dir=desktop/src-tauri/target.nosync/release/bundle/dmg
+          for f in "$dir"/Scout_*.dmg; do mv "$f" "$dir/Scout-Desktop_${f##*/Scout_}"; done
+          gh release create "$GITHUB_REF_NAME" "$dir"/*.dmg \
             --draft \
             --title "Scout Desktop ${GITHUB_REF_NAME#desktop-v}" \
             --notes "macOS (Apple Silicon). Unsigned: after installing, open System Settings → Privacy & Security → Open Anyway."
