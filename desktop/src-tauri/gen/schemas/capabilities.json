@@ -1,0 +1,1 @@
+{"remote-scout":{"identifier":"remote-scout","description":"IPC allowed from the live Scout site (spike: ping only)","remote":{"urls":["https://scout.kauper.co"]},"local":true,"windows":["main"],"permissions":["allow-ping"]}}

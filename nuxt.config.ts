@@ -14,7 +14,8 @@ export default defineNuxtConfig({
             "style-src 'self' 'unsafe-inline'",
             "img-src 'self' data: blob:",
             "font-src 'self' data:",
-            "connect-src 'self'",
+            // ipc: / http://ipc.localhost let the Tauri desktop shell use its IPC channel; they don't exist in browsers
+            "connect-src 'self' ipc: http://ipc.localhost",
             "object-src 'none'",
             "base-uri 'self'",
             "form-action 'self'",
